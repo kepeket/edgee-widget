@@ -44,12 +44,27 @@ struct WatchdogView: View {
             Card {
                 VStack(alignment: .leading, spacing: 12) {
                     Button { withAnimation { showRoles.toggle() } } label: { HStack { Text("MODEL ROLES").font(.system(size: 10, weight: .semibold, design: .monospaced)).tracking(1.3); Spacer(); Image(systemName: showRoles ? "chevron.up" : "chevron.down").font(.system(size: 10)) }.foregroundStyle(Theme.muted) }.buttonStyle(.plain)
-                    Text("Assign roles to make model-mix advice meaningful for your workflow. Automatic labels are name-based estimates.").font(.system(size: 10)).foregroundStyle(Theme.muted).lineSpacing(3)
+                    Text("Suggested roles follow your planning and execution model families. Apply them to enable thinking / executor advice; your manual choices always win.")
+                        .font(.system(size: 10)).foregroundStyle(Theme.muted).lineSpacing(3)
                     if showRoles {
-                        if (store.dailyUsage?.models ?? []).isEmpty { Text("Models appear after your first usage refresh.").font(.system(size: 10)).foregroundStyle(Theme.muted) }
-                        ForEach(store.dailyUsage?.models ?? []) { model in
-                            HStack { Text(model.name).font(.system(size: 10)).lineLimit(1); Spacer(); Picker("Role for \(model.name)", selection: Binding(get: { store.watchdogSettings.modelRoleOverrides[model.id]?.rawValue ?? "automatic" }, set: { value in store.watchdogSettings.modelRoleOverrides[model.id] = WatchdogModelRole(rawValue: value) })) { Text("Automatic").tag("automatic"); ForEach(WatchdogModelRole.allCases, id: \.self) { role in Text(role.rawValue.capitalized).tag(role.rawValue) } }.labelsHidden().frame(width: 120).controlSize(.small) }
+                        if roleModels.isEmpty {
+                            Text("Models appear after your first usage refresh.").font(.system(size: 10)).foregroundStyle(Theme.muted)
                         }
+                        if !pendingRoleSuggestions.isEmpty {
+                            Button {
+                                store.watchdogSettings.applySuggestedRoles(for: roleModels)
+                            } label: {
+                                Label("Apply suggested roles (\(pendingRoleSuggestions.count))", systemImage: "sparkles")
+                                    .font(.system(size: 11, weight: .medium))
+                            }
+                            .buttonStyle(.bordered).tint(Theme.mint).controlSize(.small)
+                            .help("Assign suggested roles to models without a manual role. This only changes local watchdog settings.")
+                        }
+                        ForEach(roleModels) { model in
+                            modelRoleRow(model)
+                        }
+                        Text("Each model has one role. Thinking replaces Frontier for that model. Roles never change agent routing.")
+                            .font(.system(size: 9)).foregroundStyle(Theme.muted).lineSpacing(3)
                     }
                 }
             }
@@ -69,6 +84,48 @@ struct WatchdogView: View {
             Label("Checks run every minute while Edgee is running. Advice never changes a route automatically.", systemImage: "clock.arrow.circlepath").font(.system(size: 10)).foregroundStyle(Theme.muted).lineSpacing(3)
         }
     }
+    private var roleModels: [ModelUsage] { store.dailyUsage?.models ?? [] }
+
+    private var pendingRoleSuggestions: [ModelUsage] {
+        roleModels.filter {
+            WatchdogEngine.classify($0, settings: store.watchdogSettings).source != .explicitOverride
+                && WatchdogEngine.suggestedRole(for: $0) != nil
+        }
+    }
+
+    private func modelRoleRow(_ model: ModelUsage) -> some View {
+        let classification = WatchdogEngine.classify(model, settings: store.watchdogSettings)
+        let suggestion = WatchdogEngine.suggestedRole(for: model)
+        return HStack(spacing: 8) {
+            VStack(alignment: .leading, spacing: 4) {
+                Text(model.name).font(.system(size: 10)).lineLimit(1).help(model.id)
+                if let suggestion {
+                    Text("Suggested: \(suggestion.rawValue.capitalized)")
+                        .font(.system(size: 9)).foregroundStyle(Theme.mint)
+                } else if classification.source != .explicitOverride {
+                    Text("No family suggestion · choose a role")
+                        .font(.system(size: 9)).foregroundStyle(Theme.muted)
+                }
+            }
+            Spacer(minLength: 0)
+            Picker("Role for \(model.name)", selection: Binding(
+                get: { classification.source == .explicitOverride ? (classification.role?.rawValue ?? "automatic") : "automatic" },
+                set: { value in
+                    var settings = store.watchdogSettings
+                    settings.modelRoleOverrides.removeValue(forKey: model.name)
+                    settings.modelRoleOverrides[model.id] = WatchdogModelRole(rawValue: value)
+                    store.watchdogSettings = settings
+                }
+            )) {
+                Text("Automatic").tag("automatic")
+                ForEach(WatchdogModelRole.allCases, id: \.self) { role in
+                    Text(role.rawValue.capitalized).tag(role.rawValue)
+                }
+            }
+            .labelsHidden().frame(width: 120).controlSize(.small)
+        }
+    }
+
     private func numberSetting(_ title: String, icon: String, value: Binding<Double>, suffix: String, range: ClosedRange<Double>) -> some View {
         HStack(spacing: 9) {
             Image(systemName: icon).font(.system(size: 12)).foregroundStyle(Theme.muted).frame(width: 16)

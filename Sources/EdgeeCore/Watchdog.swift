@@ -49,6 +49,15 @@ public struct WatchdogSettings: Codable, Sendable, Equatable {
     /// Thinking/executor ratio alerts use only these explicit assignments.
     public var modelRoleOverrides: [String: WatchdogModelRole]
 
+    /// Accept known suggestions without replacing any manual ID or name assignment.
+    public mutating func applySuggestedRoles(for models: [ModelUsage]) {
+        for model in models where modelRoleOverrides[model.id] == nil && modelRoleOverrides[model.name] == nil {
+            if let role = WatchdogEngine.suggestedRole(for: model) {
+                modelRoleOverrides[model.id] = role
+            }
+        }
+    }
+
     public init(
         dailySpendLimit: Double = 20,
         dailyTokenLimit: Double = 10_000_000,
@@ -145,6 +154,25 @@ public enum WatchdogEngine: Sendable {
         return alerts
     }
 
+    /// Workflow suggestions based on model families, not a claim about model capabilities.
+    /// Version boundaries keep, for example, Kimi 2.5 distinct from Kimi 2.50.
+    public static func suggestedRole(for model: ModelUsage) -> WatchdogModelRole? {
+        let names = [model.id, model.name].map {
+            $0.lowercased().replacingOccurrences(of: "[^a-z0-9]+", with: " ", options: .regularExpression)
+                .trimmingCharacters(in: .whitespaces)
+        }
+        let rules: [(String, WatchdogModelRole)] = [
+            (#"(?:^| )(?:opus|gpt(?: [0-9]+)* sol|kimi (?:k ?)?3|glm 5 3|deepseek v?4 1)(?: |$)"#, .thinking),
+            (#"(?:^| )(?:sonnet|gpt(?: [0-9]+)* (?:terra|luna)|qwen[0-9]*|kimi (?:k ?)?2 5)(?: |$)"#, .executor)
+        ]
+        for name in names {
+            for (pattern, role) in rules where name.range(of: pattern, options: .regularExpression) != nil {
+                return role
+            }
+        }
+        return nil
+    }
+
     /// Classifies a model, preserving whether the answer is a configuration or a heuristic.
     public static func classify(
         _ model: ModelUsage,
@@ -153,6 +181,10 @@ public enum WatchdogEngine: Sendable {
         if let role = settings.modelRoleOverrides[model.id]
             ?? settings.modelRoleOverrides[model.name] {
             return WatchdogModelClassification(role: role, source: .explicitOverride)
+        }
+
+        if let role = suggestedRole(for: model) {
+            return WatchdogModelClassification(role: role, source: .namingHeuristic)
         }
 
         let name = "\(model.id) \(model.name)".lowercased()

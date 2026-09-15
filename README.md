@@ -45,7 +45,9 @@ Switch accounts with `edgee auth switch`, then refresh. New agent keys are confi
 
 Default limits are $20 and 10 million tokens per trailing 24 hours, with budget warnings beginning at 80%. All values are editable in the Watchdog tab. A budget of zero disables that budget.
 
-Model roles can be assigned per model. Automatic model-name classifications are estimates; thinking-to-executor advice requires explicit role assignments. Session spike detection needs two fresh observations for the same session, ignores cost resets, and requires a meaningful increase before alerting.
+In **Watchdog → Model Roles**, the app suggests Thinking for Opus, GPT Sol, Kimi K3, GLM 5.3, and Deepseek v4.1; Executor for Sonnet, GPT Terra/Luna, the Qwen family, and Kimi 2.5. Suggestions recognize provider prefixes, versions, and common punctuation. These are workflow preferences, not capability ratings. **Apply suggested roles** accepts suggestions for models seen in the trailing 24 hours without overwriting manual roles. You can also choose a role individually or return it to Automatic.
+
+Automatic classifications are estimates; thinking-to-executor advice requires accepted suggestions or manual assignments. Each model has one role, so assigning Thinking excludes it from Frontier share checks. All models still count toward budget limits. Session spike detection needs two fresh observations for the same session, ignores cost resets, and requires a meaningful increase before alerting.
 
 Notifications are opt-in and limited to once per alert level per hour while the process runs. The app must remain running to monitor. These are advisory thresholds, not server-enforced spending caps.
 
