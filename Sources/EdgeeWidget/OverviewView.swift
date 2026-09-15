@@ -1,5 +1,4 @@
 import SwiftUI
-import Charts
 import EdgeeCore
 
 enum MixMetric: String, CaseIterable { case cost = "Cost", tokens = "Tokens", requests = "Requests" }
@@ -7,7 +6,6 @@ enum MixMetric: String, CaseIterable { case cost = "Cost", tokens = "Tokens", re
 struct OverviewView: View {
     @EnvironmentObject var store: AppStore
     @State private var metric: MixMetric = .cost
-    @State private var selectedTime: Date?
     var body: some View {
         VStack(spacing: 12) {
             periodPicker
@@ -52,15 +50,7 @@ struct OverviewView: View {
                     }
                 }
                 if !usage.series.isEmpty {
-                    Chart(usage.series) { point in
-                        AreaMark(x: .value("Time", point.date), y: .value("Cost", point.cost)).foregroundStyle(LinearGradient(colors: [Theme.mint.opacity(0.22), Theme.mint.opacity(0)], startPoint: .top, endPoint: .bottom)).interpolationMethod(.monotone)
-                        LineMark(x: .value("Time", point.date), y: .value("Cost", point.cost)).foregroundStyle(Theme.mint).lineStyle(StrokeStyle(lineWidth: 1.8)).interpolationMethod(.monotone)
-                        if let selectedTime, let point = usage.series.min(by: { abs($0.date.timeIntervalSince(selectedTime)) < abs($1.date.timeIntervalSince(selectedTime)) }) {
-                            RuleMark(x: .value("Selected", point.date)).foregroundStyle(Theme.muted.opacity(0.5)).lineStyle(StrokeStyle(lineWidth: 1, dash: [3, 3]))
-                                .annotation(position: .top, spacing: 2) { Text(Display.money(point.cost)).font(.system(size: 9, weight: .semibold, design: .monospaced)).padding(4).background(Theme.elevated, in: RoundedRectangle(cornerRadius: 4)) }
-                        }
-                    }.chartXSelection(value: $selectedTime).chartXAxis(.hidden).chartYAxis(.hidden).chartYScale(domain: .automatic(includesZero: true)).frame(height: 40)
-                        .accessibilityLabel("Spend history, \(usage.series.count) time intervals")
+                    SpendChart(points: usage.series)
                     HStack { Text(usage.series.first?.date ?? Date(), format: store.period == .day ? .dateTime.hour().minute() : .dateTime.month(.abbreviated).day()); Spacer(); Text("NOW") }.font(.system(size: 9, design: .monospaced)).foregroundStyle(Theme.muted)
                 } else {
                     Text("Time series unavailable for this account").font(.system(size: 10)).foregroundStyle(Theme.muted).frame(height: 38)

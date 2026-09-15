@@ -106,6 +106,26 @@ final class AppStoreTests: XCTestCase {
         XCTAssertEqual(mutationCallCount, 1)
     }
 
+    func testModelLoadFailureIsVisibleInPickerAndRetryRecovers() async {
+        let model = AvailableModel(id: "provider/model-b", name: "Model B")
+        let service = MockEdgeeService(modelFailures: 1, models: [model])
+        let suite = isolatedDefaults()
+        defer { suite.clear() }
+        let store = AppStore(service: service, defaults: suite.defaults)
+
+        store.loadModels(for: "claude")
+        await waitFor { !store.loadingModels.contains("claude") }
+        XCTAssertEqual(store.modelErrors["claude"], "Planned test failure")
+        XCTAssertNil(store.errorMessage)
+        XCTAssertNil(store.modelsByAgent["claude"])
+
+        store.loadModels(for: "claude")
+        XCTAssertNil(store.modelErrors["claude"])
+        await waitFor { !store.loadingModels.contains("claude") }
+        XCTAssertEqual(store.modelsByAgent["claude"], [model])
+        XCTAssertNil(store.modelErrors["claude"])
+    }
+
     private func waitFor(
         timeout: TimeInterval = 1,
         file: StaticString = #filePath,
@@ -180,12 +200,16 @@ private actor MockEdgeeService: EdgeeServing {
     private var completedSuspended: [String: Int] = [:]
     private var recordedCalls: [Call] = []
     private let failMutations: Bool
+    private var modelFailures: Int
+    private let models: [AvailableModel]
 
     init(
         dayPlans: [UsagePlan] = [],
         weekPlans: [UsagePlan] = [],
         monthPlans: [UsagePlan] = [],
-        failMutations: Bool = false
+        failMutations: Bool = false,
+        modelFailures: Int = 0,
+        models: [AvailableModel] = []
     ) {
         plans = [
             UsagePeriod.day.rawValue: dayPlans,
@@ -193,6 +217,8 @@ private actor MockEdgeeService: EdgeeServing {
             UsagePeriod.month.rawValue: monthPlans
         ]
         self.failMutations = failMutations
+        self.modelFailures = modelFailures
+        self.models = models
     }
 
     func identity() async throws -> EdgeeIdentity {
@@ -228,7 +254,8 @@ private actor MockEdgeeService: EdgeeServing {
 
     func availableModels(agentID: String) async throws -> [AvailableModel] {
         recordedCalls.append(.availableModels)
-        return []
+        if modelFailures > 0 { modelFailures -= 1; throw MockError.plannedFailure }
+        return models
     }
 
     func updateSetting(agentID: String, setting: AgentSetting, enabled: Bool) async throws {

@@ -11,6 +11,7 @@ import EdgeeCore
     @Published var identity: EdgeeIdentity?
     @Published var agents: [AgentConfiguration] = []
     @Published var modelsByAgent: [String: [AvailableModel]] = [:]
+    @Published var modelErrors: [String: String] = [:]
     @Published var pendingAgents: Set<String> = []
     @Published var loadingModels: Set<String> = []
     @Published var isRefreshing = false
@@ -87,7 +88,7 @@ import EdgeeCore
                 let account = try await self.service.identity()
                 guard ticket == self.generation, !Task.isCancelled else { return }
                 if let old = self.identity, old != account {
-                    self.usage = nil; self.dailyUsage = nil; self.agents = []; self.modelsByAgent = [:]
+                    self.usage = nil; self.dailyUsage = nil; self.agents = []; self.modelsByAgent = [:]; self.modelErrors = [:]
                     self.previousObservation = nil; self.deliveredAlerts = [:]; self.alerts = []
                 }
                 self.identity = account
@@ -122,14 +123,14 @@ import EdgeeCore
         isDemo = true; errorMessage = nil
         identity = EdgeeIdentity(name: "Developer", organization: "Demo workspace")
         agents = DemoData.agents; usage = DemoData.usage(period); dailyUsage = DemoData.usage(.day)
-        lastRefresh = Date(); modelsByAgent = [:]; previousObservation = nil
+        lastRefresh = Date(); modelsByAgent = [:]; modelErrors = [:]; previousObservation = nil
         var demoSettings = WatchdogSettings()
         demoSettings.modelRoleOverrides = ["anthropic/claude-opus-4.6": .frontier, "anthropic/claude-sonnet-4.6": .balanced, "openai/gpt-5-mini": .executor]
         watchdogSettings = demoSettings
         reevaluateWatchdog(); onStatusChange?()
     }
     func leaveDemo() {
-        generation += 1; isDemo = false; usage = nil; dailyUsage = nil; identity = nil; agents = []; alerts = []; modelsByAgent = [:]; previousObservation = nil
+        generation += 1; isDemo = false; usage = nil; dailyUsage = nil; identity = nil; agents = []; alerts = []; modelsByAgent = [:]; modelErrors = [:]; previousObservation = nil
         if let data = defaults.data(forKey: "watchdogSettings"), let value = try? JSONDecoder().decode(WatchdogSettings.self, from: data) { watchdogSettings = value }
         else { watchdogSettings = WatchdogSettings() }
         onStatusChange?(); refresh(force: true)
@@ -145,6 +146,7 @@ import EdgeeCore
     }
     func loadModels(for agent: String) {
         guard !loadingModels.contains(agent) else { return }
+        modelErrors[agent] = nil
         if isDemo { modelsByAgent[agent] = DemoData.models; return }
         loadingModels.insert(agent)
         let account = identity
@@ -157,7 +159,7 @@ import EdgeeCore
                 modelsByAgent[agent] = models
             } catch {
                 guard account == identity, wasDemo == isDemo else { return }
-                errorMessage = error.localizedDescription
+                modelErrors[agent] = error.localizedDescription
             }
         }
     }

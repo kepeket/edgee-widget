@@ -74,7 +74,18 @@ struct ModelPicker: View {
             TextField("Search models…", text: $query).textFieldStyle(.roundedBorder)
             Button { store.setRoute(agent.id, model: nil); isPresented = false } label: { Label("Original model · passthrough", systemImage: "arrow.right").font(.system(size: 11)).frame(maxWidth: .infinity, alignment: .leading) }.buttonStyle(.plain).padding(.vertical, 5)
             Divider()
-            if store.loadingModels.contains(agent.id) { ProgressView().controlSize(.small).frame(maxWidth: .infinity) }
+            HStack {
+                if store.loadingModels.contains(agent.id) {
+                    ProgressView().controlSize(.mini)
+                    Text("Loading models from Edgee…").font(.system(size: 10)).foregroundStyle(Theme.muted)
+                } else {
+                    Text("\(models.count) models").font(.system(size: 10, design: .monospaced)).foregroundStyle(Theme.muted)
+                }
+                Spacer()
+                Button { store.loadModels(for: agent.id) } label: { Image(systemName: "arrow.clockwise") }
+                    .buttonStyle(.plain).foregroundStyle(Theme.mint).help("Reload available models")
+                    .accessibilityLabel("Reload available models").disabled(store.loadingModels.contains(agent.id))
+            }.frame(height: 18)
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 4) {
                     ForEach(models) { model in
@@ -82,7 +93,16 @@ struct ModelPicker: View {
                             HStack { VStack(alignment: .leading, spacing: 3) { Text(model.name).font(.system(size: 11, weight: .medium)); Text(model.id).font(.system(size: 9, design: .monospaced)).foregroundStyle(Theme.muted) }; Spacer(); if agent.routedModel == model.id { Image(systemName: "checkmark").foregroundStyle(Theme.mint) } }.padding(8).frame(maxWidth: .infinity, alignment: .leading).contentShape(Rectangle())
                         }.buttonStyle(.plain)
                     }
-                    if models.isEmpty && !store.loadingModels.contains(agent.id) { Text("No matching models. Refresh to try again.").font(.system(size: 11)).foregroundStyle(Theme.muted) }
+                    if let error = store.modelErrors[agent.id] {
+                        VStack(alignment: .leading, spacing: 10) {
+                            Label("Could not load available models", systemImage: "exclamationmark.circle").foregroundStyle(Theme.amber)
+                            Text(error).foregroundStyle(Theme.muted)
+                            Button("Try again") { store.loadModels(for: agent.id) }.buttonStyle(.plain).foregroundStyle(Theme.mint)
+                        }.font(.system(size: 11)).padding(.vertical, 8)
+                    } else if models.isEmpty && !store.loadingModels.contains(agent.id) {
+                        Text(query.isEmpty ? "Edgee returned no routable models for this agent. Check its model access in Edgee, then reload." : "No models match “\(query)”. Try another search.")
+                            .font(.system(size: 11)).foregroundStyle(Theme.muted).padding(.vertical, 8)
+                    }
                 }
             }.frame(height: 240)
         }.padding(18).frame(width: 330).background(Theme.background).foregroundStyle(Theme.text).preferredColorScheme(.dark)

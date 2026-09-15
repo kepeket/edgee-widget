@@ -90,7 +90,7 @@ struct SettingsContent: View {
             }
             Card {
                 VStack(alignment: .leading, spacing: 13) {
-                    SectionCaption(title: "EDGEE PULSE", trailing: "0.1.0")
+                    SectionCaption(title: "EDGEE PULSE", trailing: Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "dev")
                     Text("A calmer home for your AI usage.").font(.system(size: 12))
                     HStack { Button("View source ↗") { NSWorkspace.shared.open(URL(string: "https://github.com/kepeket/edgee-widget")!) }; Spacer(); Button(store.isDemo ? "Exit demo" : "Explore demo") { if store.isDemo { store.leaveDemo() } else { store.enterDemo() } } }.buttonStyle(.plain).font(.system(size: 11)).foregroundStyle(Theme.mint)
                 }
