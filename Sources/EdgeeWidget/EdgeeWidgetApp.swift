@@ -61,8 +61,7 @@ import UserNotifications
     private func configureStatusItem() {
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         if let button = statusItem.button {
-            let image = NSImage(systemSymbolName: "bolt.horizontal.fill", accessibilityDescription: "Edgee Pulse")
-            image?.isTemplate = true
+            let image = BrandAssets.menuBarIcon
             button.image = image
             button.imagePosition = .imageLeading
             button.font = .monospacedDigitSystemFont(ofSize: 11, weight: .medium)

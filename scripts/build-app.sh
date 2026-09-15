@@ -91,6 +91,9 @@ swift -module-cache-path "$ICON_SWIFT_CACHE_DIR" "${ROOT_DIR}/scripts/make-icon.
 iconutil -c icns -o "${RESOURCES_DIR}/Edgee.icns" "$ICONSET_DIR"
 rm -rf -- "$ICONSET_DIR"
 
+RESOURCE_BUNDLE="${ROOT_DIR}/.build/${CONFIGURATION}/EdgeeWidget_EdgeeWidget.bundle"
+[[ -d "$RESOURCE_BUNDLE" ]] || die "SwiftPM did not produce the branding resource bundle"
+cp -R "$RESOURCE_BUNDLE" "$RESOURCES_DIR/"
 cp -- "$BINARY_PATH" "${MACOS_DIR}/EdgeeWidget"
 cp -- "${ROOT_DIR}/Resources/Info.plist" "${CONTENTS_DIR}/Info.plist"
 chmod 755 "${MACOS_DIR}/EdgeeWidget"

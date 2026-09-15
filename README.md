@@ -57,6 +57,8 @@ make build
 open Package.swift
 ```
 
+CI runs on macOS 15 with Xcode 16.4 explicitly selected (Swift 6), runs tests, verifies the signed app and bundled branding, and uploads the packaged app.
+
 Xcode can open the Swift package directly. `make build` creates the locally signed `build/Edgee.app`; `make run` builds and opens it. Copy that app to Applications if desired. Developer ID signing is supported with `SIGN_IDENTITY`; distribution notarization is not configured.
 
 ```sh
@@ -89,5 +91,7 @@ swift test --disable-sandbox --cache-path .build/cache \
 | `Tests` | API conversion and watchdog regression checks |
 | `scripts` | Build, package, sign, generate icon, launch |
 | `docs/API.md` | Verified endpoint contracts and integration boundaries |
+
+The app uses [Edgee’s official logo artwork](Resources/Branding/README.md), bundled as native vectors. Edgee retains ownership of its name and trademarks.
 
 This project is licensed under the existing [GPL-3.0 license](LICENSE).

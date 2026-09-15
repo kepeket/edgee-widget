@@ -24,9 +24,8 @@ struct PanelView: View {
     }
     private var header: some View {
         HStack(spacing: 10) {
-            EdgeeMark()
             VStack(alignment: .leading, spacing: 2) {
-                HStack(alignment: .firstTextBaseline, spacing: 5) { Text("edgee").font(.system(size: 20, weight: .bold)).tracking(-0.6); Text("/ pulse").font(.system(size: 12, weight: .light, design: .monospaced)).foregroundStyle(Theme.muted) }
+                HStack(alignment: .firstTextBaseline, spacing: 5) { EdgeeWordmark(); Text("/ pulse").font(.system(size: 12, weight: .light, design: .monospaced)).foregroundStyle(Theme.muted) }
                 Text(store.identity?.organization.isEmpty == false ? store.identity!.organization : "YOUR AGENT CONTROL ROOM").font(.system(size: 8, weight: .medium, design: .monospaced)).tracking(1.0).foregroundStyle(Theme.muted).lineLimit(1)
             }
             Spacer()

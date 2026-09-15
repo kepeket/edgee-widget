@@ -6,7 +6,7 @@ let package = Package(
     products: [.executable(name: "EdgeeWidget", targets: ["EdgeeWidget"]), .library(name: "EdgeeCore", targets: ["EdgeeCore"])],
     targets: [
         .target(name: "EdgeeCore"),
-        .executableTarget(name: "EdgeeWidget", dependencies: ["EdgeeCore"]),
+        .executableTarget(name: "EdgeeWidget", dependencies: ["EdgeeCore"], resources: [.process("Resources")]),
         .testTarget(name: "EdgeeCoreTests", dependencies: ["EdgeeCore"]),
         .testTarget(name: "EdgeeWidgetTests", dependencies: ["EdgeeWidget", "EdgeeCore"])
     ],

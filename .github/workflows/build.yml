@@ -5,12 +5,24 @@ on:
   pull_request:
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 jobs:
   build:
-    runs-on: macos-14
+    runs-on: macos-15
+    timeout-minutes: 20
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_16.4.app/Contents/Developer
     steps:
       - name: Check out source
         uses: actions/checkout@v4
+
+      - name: Verify pinned Swift 6 toolchain
+        run: |
+          test -d "$DEVELOPER_DIR"
+          xcodebuild -version
+          swift --version
 
       - name: Run Swift tests
         run: swift test
@@ -19,6 +31,12 @@ jobs:
         env:
           SIGN_IDENTITY: "-"
         run: ./scripts/build-app.sh --release
+
+      - name: Verify signed bundle and branding resources
+        run: |
+          codesign --verify --deep --strict build/Edgee.app
+          test -f build/Edgee.app/Contents/Resources/EdgeeWidget_EdgeeWidget.bundle/EdgeeMark.pdf
+          test -f build/Edgee.app/Contents/Resources/EdgeeWidget_EdgeeWidget.bundle/EdgeeWordmark.pdf
 
       - name: Package app bundle
         run: ditto -c -k --sequesterRsrc --keepParent build/Edgee.app EdgeeWidget-macOS.zip

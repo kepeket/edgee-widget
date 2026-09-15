@@ -41,13 +41,13 @@ struct StatusPill: View {
     var color: Color = Theme.mint
     var body: some View { HStack(spacing: 5) { Circle().fill(color).frame(width: 5, height: 5); Text(label).font(.system(size: 9, weight: .semibold, design: .monospaced)).tracking(0.7) }.foregroundStyle(color).padding(.horizontal, 8).padding(.vertical, 5).background(color.opacity(0.08), in: Capsule()).overlay(Capsule().strokeBorder(color.opacity(0.15))) }
 }
-struct EdgeeMark: View {
+struct EdgeeWordmark: View {
     var body: some View {
-        ZStack {
-            RoundedRectangle(cornerRadius: 10).fill(Theme.mint).frame(width: 32, height: 32)
-            Image(systemName: "bolt.horizontal.fill").font(.system(size: 21, weight: .black)).foregroundStyle(Theme.background).rotationEffect(.degrees(-20))
-        }
-        .accessibilityHidden(true)
+        Image(nsImage: BrandAssets.image(named: "EdgeeWordmark"))
+            .resizable().renderingMode(.template).scaledToFit()
+            .frame(width: 108, height: 26)
+            .foregroundStyle(Theme.text)
+            .accessibilityLabel("Edgee")
     }
 }
 struct SmallIconButton: View {
