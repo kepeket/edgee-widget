@@ -91,7 +91,7 @@ POST /v1/organizations/{org_id}/api_keys/{key_id}
 
 The endpoint expects the full compression/fallback/reroute settings bundle. Before changing one compression flag, the service reads current state and preserves the original raw fallback and reroute arrays, including fields unknown to this app.
 
-Model switching is currently disabled at the app-store boundary, including passthrough. Clicking the current route expands a read-only preview within the agent card, with a “Soon available” overlay. This avoids presenting a second popover inside the menu-bar popover.
+Model switching is currently disabled at the app-store boundary, including passthrough. Clicking the current route opens a read-only preview beside the agent card, with a “Soon available” overlay. The preview has no editable search field, avoiding the field-editor focus transfer implicated in the old picker crash.
 
 The preview fetches the real Console catalog with `GET /v1/models`, using the active CLI profile's Console credentials. This is the same endpoint used by `ApiClient::list_models` in the current Edgee CLI. Inactive and app-subscription-only models are excluded; the preview is not an agent-specific access guarantee. Loading errors are visible and retryable.
 

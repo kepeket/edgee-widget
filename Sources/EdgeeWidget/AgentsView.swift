@@ -21,7 +21,7 @@ struct AgentsView: View {
 struct AgentCard: View {
     @EnvironmentObject var store: AppStore
     let agent: AgentConfiguration
-    @State private var isRoutePreviewExpanded = false
+    @State private var isRoutePreviewPresented = false
     private var busy: Bool { store.pendingAgents.contains(agent.id) }
     var body: some View {
         Card {
@@ -37,8 +37,8 @@ struct AgentCard: View {
                 settingRow("Tool surface reduction", detail: "Send fewer tool definitions", setting: .toolSurfaceReduction, enabled: agent.toolSurfaceReduction, icon: "square.stack.3d.up")
                 settingRow("Output brevity", detail: "Keep responses focused", setting: .outputBrevity, enabled: agent.outputBrevity, icon: "text.alignleft")
                 Button {
-                    isRoutePreviewExpanded.toggle()
-                    if isRoutePreviewExpanded { store.loadModels(for: agent.id) }
+                    isRoutePreviewPresented.toggle()
+                    if isRoutePreviewPresented { store.loadModels(for: agent.id) }
                 } label: {
                     HStack(spacing: 8) {
                         Image(systemName: "arrow.triangle.branch").foregroundStyle(Theme.mint)
@@ -47,16 +47,33 @@ struct AgentCard: View {
                             Text(agent.routedModel ?? "Original model · passthrough").font(.system(size: 11, weight: .medium)).lineLimit(1).truncationMode(.middle)
                         }
                         Spacer(minLength: 3)
-                        Image(systemName: isRoutePreviewExpanded ? "chevron.up" : "chevron.down").font(.system(size: 9)).foregroundStyle(Theme.muted)
+                        Image(systemName: "chevron.up.chevron.down").font(.system(size: 9)).foregroundStyle(Theme.muted)
                     }.padding(10).background(Theme.background.opacity(0.55), in: RoundedRectangle(cornerRadius: 10)).overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(Theme.line))
                 }.buttonStyle(.plain)
                     .accessibilityLabel("Preview routing models for \(agent.name)")
-                    .accessibilityValue(isRoutePreviewExpanded ? "Expanded" : "Collapsed")
-                if isRoutePreviewExpanded {
-                    // Keep the preview in the menu-bar panel. A nested NSPopover can
-                    // crash AppKit while it transfers the search field's first responder.
-                    RouteModelPreview(agent: agent)
-                }
+                    .accessibilityValue(isRoutePreviewPresented ? "Expanded" : "Collapsed")
+                    .popover(isPresented: $isRoutePreviewPresented, arrowEdge: .trailing) {
+                        // No editable search field: the old picker crashed during
+                        // AppKit's field-editor focus transfer between popovers.
+                        VStack(alignment: .leading, spacing: 14) {
+                            HStack {
+                                Text("Route \(agent.name)").font(.system(size: 14, weight: .semibold))
+                                Spacer()
+                                SmallIconButton(symbol: "xmark", help: "Close routing preview") {
+                                    isRoutePreviewPresented = false
+                                }
+                            }
+                            VStack(alignment: .leading, spacing: 5) {
+                                Text("CURRENT ROUTE").font(.system(size: 8, weight: .semibold, design: .monospaced)).foregroundStyle(Theme.muted)
+                                Text(agent.routedModel ?? "Original model · passthrough")
+                                    .font(.system(size: 11, weight: .medium)).lineLimit(2)
+                            }
+                            RouteModelPreview(agent: agent)
+                        }
+                        .padding(18).frame(width: 330).fixedSize(horizontal: false, vertical: true)
+                        .background(Theme.background).foregroundStyle(Theme.text).preferredColorScheme(.dark)
+                        .environmentObject(store)
+                    }
                 if let detail = agent.detail { Text(detail).font(.system(size: 10)).foregroundStyle(Theme.muted).fixedSize(horizontal: false, vertical: true) }
             }
         }
@@ -117,7 +134,7 @@ struct RouteModelPreview: View {
                     }
                 }
             }
-            .frame(height: 180)
+            .frame(height: 240)
             .disabled(true).allowsHitTesting(false).accessibilityHidden(true)
             .overlay {
                 ZStack {
