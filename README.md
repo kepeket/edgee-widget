@@ -61,7 +61,7 @@ open Package.swift
 
 CI runs on macOS 15 with Xcode 16.4 explicitly selected (Swift 6), runs tests, verifies the signed app and bundled branding, and uploads the packaged app.
 
-Xcode can open the Swift package directly. `make build` creates the locally signed `build/Edgee.app`; `make run` builds and opens it. Copy that app to Applications if desired. Developer ID signing is supported with `SIGN_IDENTITY`; distribution notarization is not configured.
+Xcode can open the Swift package directly. `make build` creates the locally signed `build/Edgee.app`; `make run` builds and opens it. Copy that app to Applications if desired. For company deployment, `make package` builds a universal, Developer ID-signed and notarized installer using your configured signing identities. `make package-unsigned` creates review artifacts without signing credentials. See [company deployment](docs/DEPLOYMENT.md) for requirements, signing, and Jamf rollout.
 
 ```sh
 scripts/run.sh --debug --demo --window

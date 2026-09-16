@@ -30,19 +30,28 @@ jobs:
       - name: Build macOS app bundle
         env:
           SIGN_IDENTITY: "-"
-        run: ./scripts/build-app.sh --release
+        run: ./scripts/build-app.sh --release --universal
 
       - name: Verify signed bundle and branding resources
         run: |
-          codesign --verify --deep --strict build/Edgee.app
-          test -f build/Edgee.app/Contents/Resources/EdgeeWidget_EdgeeWidget.bundle/EdgeeMark.pdf
-          test -f build/Edgee.app/Contents/Resources/EdgeeWidget_EdgeeWidget.bundle/EdgeeWordmark.pdf
+          codesign --verify --deep --strict build/universal/Edgee.app
+          test -f build/universal/Edgee.app/Contents/Resources/EdgeeWidget_EdgeeWidget.bundle/EdgeeMark.pdf
+          test -f build/universal/Edgee.app/Contents/Resources/EdgeeWidget_EdgeeWidget.bundle/EdgeeWordmark.pdf
 
-      - name: Package app bundle
-        run: ditto -c -k --sequesterRsrc --keepParent build/Edgee.app EdgeeWidget-macOS.zip
+      - name: Build unsigned review installer
+        run: ./scripts/package-app.sh --unsigned
 
-      - name: Upload app artifact
+      - name: Verify distribution payload
+        run: ./scripts/verify-package.sh dist/*-unsigned.pkg
+
+      - name: Archive matching source
+        run: |
+          git archive --format=tar.gz --prefix=edgee-pulse/ --output=dist/Edgee-Pulse-source.tar.gz HEAD
+          cd dist
+          shasum -a 256 Edgee-Pulse-source.tar.gz >> SHA256SUMS
+
+      - name: Upload review distribution
         uses: actions/upload-artifact@v4
         with:
-          name: EdgeeWidget-macOS
-          path: EdgeeWidget-macOS.zip
+          name: Edgee-Pulse-unsigned-review
+          path: dist/

@@ -1,6 +1,6 @@
 SHELL := /bin/bash
 
-.PHONY: build debug run demo test
+.PHONY: build debug run demo test package package-unsigned
 
 build:
 	./scripts/build-app.sh --release
@@ -16,3 +16,14 @@ demo:
 
 test:
 	swift test
+
+package:
+	@test -n "$$SIGN_IDENTITY" && test "$$SIGN_IDENTITY" != "-" || (echo 'Set SIGN_IDENTITY to your Developer ID Application identity.' >&2; exit 1)
+	@test -n "$$INSTALLER_SIGN_IDENTITY" || (echo 'Set INSTALLER_SIGN_IDENTITY to your Developer ID Installer identity.' >&2; exit 1)
+	@test -n "$$NOTARY_PROFILE" || (echo 'Set NOTARY_PROFILE to your saved notarytool Keychain profile.' >&2; exit 1)
+	./scripts/build-app.sh --release --universal
+	./scripts/package-app.sh --notarize
+
+package-unsigned:
+	SIGN_IDENTITY=- ./scripts/build-app.sh --release --universal
+	./scripts/package-app.sh --unsigned
