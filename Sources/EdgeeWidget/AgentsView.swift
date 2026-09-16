@@ -21,7 +21,7 @@ struct AgentsView: View {
 struct AgentCard: View {
     @EnvironmentObject var store: AppStore
     let agent: AgentConfiguration
-    @State private var isModelPickerPresented = false
+    @State private var isRoutePreviewExpanded = false
     private var busy: Bool { store.pendingAgents.contains(agent.id) }
     var body: some View {
         Card {
@@ -36,7 +36,10 @@ struct AgentCard: View {
                 settingRow("Tool compression", detail: "Trim repetitive tool results", setting: .toolCompression, enabled: agent.toolCompression, icon: "arrow.down.right.and.arrow.up.left")
                 settingRow("Tool surface reduction", detail: "Send fewer tool definitions", setting: .toolSurfaceReduction, enabled: agent.toolSurfaceReduction, icon: "square.stack.3d.up")
                 settingRow("Output brevity", detail: "Keep responses focused", setting: .outputBrevity, enabled: agent.outputBrevity, icon: "text.alignleft")
-                Button { isModelPickerPresented = true; store.loadModels(for: agent.id) } label: {
+                Button {
+                    isRoutePreviewExpanded.toggle()
+                    if isRoutePreviewExpanded { store.loadModels(for: agent.id) }
+                } label: {
                     HStack(spacing: 8) {
                         Image(systemName: "arrow.triangle.branch").foregroundStyle(Theme.mint)
                         VStack(alignment: .leading, spacing: 4) {
@@ -44,9 +47,16 @@ struct AgentCard: View {
                             Text(agent.routedModel ?? "Original model · passthrough").font(.system(size: 11, weight: .medium)).lineLimit(1).truncationMode(.middle)
                         }
                         Spacer(minLength: 3)
-                        Image(systemName: "chevron.up.chevron.down").font(.system(size: 9)).foregroundStyle(Theme.muted)
+                        Image(systemName: isRoutePreviewExpanded ? "chevron.up" : "chevron.down").font(.system(size: 9)).foregroundStyle(Theme.muted)
                     }.padding(10).background(Theme.background.opacity(0.55), in: RoundedRectangle(cornerRadius: 10)).overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(Theme.line))
-                }.buttonStyle(.plain).disabled(!agent.canEdit || busy).popover(isPresented: $isModelPickerPresented, arrowEdge: .trailing) { ModelPicker(agent: agent, isPresented: $isModelPickerPresented).environmentObject(store) }
+                }.buttonStyle(.plain)
+                    .accessibilityLabel("Preview routing models for \(agent.name)")
+                    .accessibilityValue(isRoutePreviewExpanded ? "Expanded" : "Collapsed")
+                if isRoutePreviewExpanded {
+                    // Keep the preview in the menu-bar panel. A nested NSPopover can
+                    // crash AppKit while it transfers the search field's first responder.
+                    RouteModelPreview(agent: agent)
+                }
                 if let detail = agent.detail { Text(detail).font(.system(size: 10)).foregroundStyle(Theme.muted).fixedSize(horizontal: false, vertical: true) }
             }
         }
@@ -61,50 +71,80 @@ struct AgentCard: View {
         }
     }
 }
-struct ModelPicker: View {
+struct RouteModelPreview: View {
     @EnvironmentObject var store: AppStore
     let agent: AgentConfiguration
-    @Binding var isPresented: Bool
-    @State private var query = ""
-    private var models: [AvailableModel] { (store.modelsByAgent[agent.id] ?? []).filter { query.isEmpty || $0.name.localizedCaseInsensitiveContains(query) || $0.id.localizedCaseInsensitiveContains(query) } }
+    private var models: [AvailableModel] { store.modelsByAgent[agent.id] ?? [] }
+    private var loading: Bool { store.loadingModels.contains(agent.id) }
+
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text("Route \(agent.name)").font(.system(size: 14, weight: .semibold))
-            Text("Choose a fixed destination for future requests.").font(.system(size: 10)).foregroundStyle(Theme.muted)
-            TextField("Search models…", text: $query).textFieldStyle(.roundedBorder)
-            Button { store.setRoute(agent.id, model: nil); isPresented = false } label: { Label("Original model · passthrough", systemImage: "arrow.right").font(.system(size: 11)).frame(maxWidth: .infinity, alignment: .leading) }.buttonStyle(.plain).padding(.vertical, 5)
-            Divider()
-            HStack {
-                if store.loadingModels.contains(agent.id) {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 7) {
+                if loading {
                     ProgressView().controlSize(.mini)
-                    Text("Loading models from Edgee…").font(.system(size: 10)).foregroundStyle(Theme.muted)
+                    Text("Loading models from Edgee…")
                 } else {
-                    Text("\(models.count) models").font(.system(size: 10, design: .monospaced)).foregroundStyle(Theme.muted)
+                    Text("\(models.count) available models")
                 }
                 Spacer()
-                Button { store.loadModels(for: agent.id) } label: { Image(systemName: "arrow.clockwise") }
-                    .buttonStyle(.plain).foregroundStyle(Theme.mint).help("Reload available models")
-                    .accessibilityLabel("Reload available models").disabled(store.loadingModels.contains(agent.id))
-            }.frame(height: 18)
+                Button { store.loadModels(for: agent.id) } label: {
+                    Image(systemName: "arrow.clockwise")
+                }
+                .buttonStyle(.plain).foregroundStyle(Theme.mint).disabled(loading)
+                .accessibilityLabel("Reload available models")
+            }.font(.system(size: 10)).foregroundStyle(Theme.muted).frame(height: 18)
+
+            if let error = store.modelErrors[agent.id] {
+                VStack(alignment: .leading, spacing: 6) {
+                    Label("Could not load available models", systemImage: "exclamationmark.circle")
+                        .foregroundStyle(Theme.amber)
+                    Text(error).foregroundStyle(Theme.muted).lineLimit(3).help(error)
+                    Button("Try again") { store.loadModels(for: agent.id) }
+                        .buttonStyle(.plain).foregroundStyle(Theme.mint).disabled(loading)
+                }.font(.system(size: 10))
+            }
+
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 4) {
-                    ForEach(models) { model in
-                        Button { store.setRoute(agent.id, model: model.id); isPresented = false } label: {
-                            HStack { VStack(alignment: .leading, spacing: 3) { Text(model.name).font(.system(size: 11, weight: .medium)); Text(model.id).font(.system(size: 9, design: .monospaced)).foregroundStyle(Theme.muted) }; Spacer(); if agent.routedModel == model.id { Image(systemName: "checkmark").foregroundStyle(Theme.mint) } }.padding(8).frame(maxWidth: .infinity, alignment: .leading).contentShape(Rectangle())
-                        }.buttonStyle(.plain)
+                    modelRow(name: "Original model · passthrough", id: nil)
+                    // Index identity keeps duplicate catalog entries from confusing SwiftUI.
+                    ForEach(Array(models.enumerated()), id: \.offset) { _, model in
+                        modelRow(name: model.name, id: model.id)
                     }
-                    if let error = store.modelErrors[agent.id] {
-                        VStack(alignment: .leading, spacing: 10) {
-                            Label("Could not load available models", systemImage: "exclamationmark.circle").foregroundStyle(Theme.amber)
-                            Text(error).foregroundStyle(Theme.muted)
-                            Button("Try again") { store.loadModels(for: agent.id) }.buttonStyle(.plain).foregroundStyle(Theme.mint)
-                        }.font(.system(size: 11)).padding(.vertical, 8)
-                    } else if models.isEmpty && !store.loadingModels.contains(agent.id) {
-                        Text(query.isEmpty ? "Edgee returned no routable models for this agent. Check its model access in Edgee, then reload." : "No models match “\(query)”. Try another search.")
-                            .font(.system(size: 11)).foregroundStyle(Theme.muted).padding(.vertical, 8)
+                    if models.isEmpty && !loading && store.modelErrors[agent.id] == nil {
+                        Text("No routable models returned for this agent.")
+                            .font(.system(size: 10)).foregroundStyle(Theme.muted).padding(8)
                     }
                 }
-            }.frame(height: 240)
-        }.padding(18).frame(width: 330).background(Theme.background).foregroundStyle(Theme.text).preferredColorScheme(.dark)
+            }
+            .frame(height: 180)
+            .disabled(true).allowsHitTesting(false).accessibilityHidden(true)
+            .overlay {
+                ZStack {
+                    Theme.background.opacity(0.70)
+                    VStack(spacing: 8) {
+                        Image(systemName: "lock.fill").font(.system(size: 17)).foregroundStyle(Theme.mint)
+                        Text("Soon available").font(.system(size: 17, weight: .semibold))
+                        Text("Model switching is coming soon.\nYour current route stays active.")
+                            .font(.system(size: 10)).foregroundStyle(Theme.muted)
+                            .multilineTextAlignment(.center)
+                    }.padding(16)
+                }.accessibilityElement(children: .combine)
+            }
+            .background(Theme.background)
+            .clipShape(RoundedRectangle(cornerRadius: 10))
+            .overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(Theme.line))
+        }
+    }
+
+    private func modelRow(name: String, id: String?) -> some View {
+        HStack {
+            VStack(alignment: .leading, spacing: 3) {
+                Text(name).font(.system(size: 11, weight: .medium))
+                if let id { Text(id).font(.system(size: 9, design: .monospaced)).foregroundStyle(Theme.muted) }
+            }
+            Spacer()
+            if agent.routedModel == id { Image(systemName: "checkmark").foregroundStyle(Theme.mint) }
+        }.padding(8).frame(maxWidth: .infinity, alignment: .leading)
     }
 }

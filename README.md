@@ -27,7 +27,7 @@ Demo mode is visibly labeled, never makes API calls, and never changes your real
 ## What it does
 
 - **Usage:** trailing 24 hours, 7 days, or 30 days; total spend and requests; input, cache-write, cache-read, and output token volumes and costs; spend history; model mix by cost, tokens, or requests.
-- **Agents:** existing agent keys from your active CLI profile; tool compression, tool surface reduction, and output brevity; searchable model rerouting and passthrough.
+- **Agents:** existing agent keys from your active CLI profile; tool compression, tool surface reduction, and output brevity; current route display and an on-demand model catalog preview. Model switching is marked “Soon available” and cannot submit route changes.
 - **Watchdog:** spend/token budgets, frontier cost share, thinking-to-executor cost ratio, and session spend acceleration. Alerts link to agent controls. Nothing reroutes automatically.
 - **Native behavior:** minute-by-minute refresh, optional macOS notifications, launch at login, a pin-to-open popover, and a menu bar cost that stays on the daily window while you browse week/month.
 

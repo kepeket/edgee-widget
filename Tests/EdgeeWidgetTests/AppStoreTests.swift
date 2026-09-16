@@ -106,6 +106,42 @@ final class AppStoreTests: XCTestCase {
         XCTAssertEqual(mutationCallCount, 1)
     }
 
+    func testSetRouteIsReadOnlyForLiveServiceWhileModelsStillLoad() async {
+        let model = AvailableModel(id: "provider/model-b", name: "Model B")
+        let service = MockEdgeeService(models: [model])
+        let suite = isolatedDefaults()
+        defer { suite.clear() }
+        let store = AppStore(service: service, defaults: suite.defaults)
+        let original = AgentConfiguration(id: "agent", name: "Agent", toolCompression: false, routedModel: "model-a")
+        store.agents = [original]
+
+        store.setRoute("agent", model: model.id)
+        store.setRoute("agent", model: nil)
+        store.loadModels(for: "agent")
+        await waitFor { !store.loadingModels.contains("agent") }
+
+        XCTAssertEqual(store.agents, [original])
+        XCTAssertEqual(store.modelsByAgent["agent"], [model])
+        let calls = await service.calls()
+        XCTAssertEqual(calls, [.availableModels])
+    }
+
+    func testSetRouteIsReadOnlyForDemoAgentIncludingPassthrough() async throws {
+        let service = MockEdgeeService()
+        let suite = isolatedDefaults()
+        defer { suite.clear() }
+        let store = AppStore(service: service, demo: true, defaults: suite.defaults)
+        let originalAgents = store.agents
+        let agent = try XCTUnwrap(originalAgents.first)
+
+        store.setRoute(agent.id, model: "other-model")
+        store.setRoute(agent.id, model: nil)
+
+        XCTAssertEqual(store.agents, originalAgents)
+        let calls = await service.calls()
+        XCTAssertFalse(calls.contains(.updateRoute))
+    }
+
     func testModelLoadFailureIsVisibleInPickerAndRetryRecovers() async {
         let model = AvailableModel(id: "provider/model-b", name: "Model B")
         let service = MockEdgeeService(modelFailures: 1, models: [model])

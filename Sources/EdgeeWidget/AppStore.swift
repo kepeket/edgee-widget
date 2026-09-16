@@ -172,10 +172,9 @@ import EdgeeCore
         }
         mutateAgent(id) { try await self.service.updateSetting(agentID: id, setting: setting, enabled: enabled) }
     }
-    func setRoute(_ id: String, model: String?) {
-        if isDemo { if let index = agents.firstIndex(where: { $0.id == id }) { agents[index].routedModel = model }; return }
-        mutateAgent(id) { try await self.service.updateRoute(agentID: id, modelID: model) }
-    }
+    // Model switching is unavailable until the routing feature is ready.
+    // Keep this guard at the store boundary so no UI can accidentally submit a route.
+    func setRoute(_ id: String, model: String?) { }
     private func mutateAgent(_ id: String, operation: @escaping () async throws -> Void) {
         guard !pendingAgents.contains(id) else { return }
         pendingAgents.insert(id); errorMessage = nil
