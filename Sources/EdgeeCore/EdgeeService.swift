@@ -140,12 +140,15 @@ public actor EdgeeService: EdgeeServing {
 
     public func availableModels(agentID: String) async throws -> [AvailableModel] {
         guard !agentID.isEmpty else { throw EdgeeServiceError.invalidResponse("agent") }
-        let data = try await runCLI(
-            ["route", "models", "--agent", agentID, "--json"],
-            timeout: 45,
-            operation: "route models"
+        // The preview is a read-only catalog, not a promise of agent-specific access.
+        // CLI 0.11 removed `route models`; use the same Console catalog as its settings UI.
+        let credentials = try await readCredentials()
+        let data = try await apiRequest(
+            credentials: credentials,
+            pathComponents: ["v1", "models"],
+            method: "GET"
         )
-        return try Self.parseRouteModels(data)
+        return try Self.parseAvailableModels(data)
     }
 
     public func updateSetting(agentID: String, setting: AgentSetting, enabled: Bool) async throws {

@@ -91,18 +91,11 @@ POST /v1/organizations/{org_id}/api_keys/{key_id}
 
 The endpoint expects the full compression/fallback/reroute settings bundle. Before changing one compression flag, the service reads current state and preserves the original raw fallback and reroute arrays, including fields unknown to this app.
 
-Routes are changed through the CLI:
+Model switching is currently disabled at the app-store boundary, including passthrough. Clicking the current route expands a read-only preview within the agent card, with a “Soon available” overlay. This avoids presenting a second popover inside the menu-bar popover.
 
-```text
-edgee route set --agent AGENT --strategy reroute --model MODEL
-edgee route set --agent AGENT --strategy passthrough
-```
+The preview fetches the real Console catalog with `GET /v1/models`, using the active CLI profile's Console credentials. This is the same endpoint used by `ApiClient::list_models` in the current Edgee CLI. Inactive and app-subscription-only models are excluded; the preview is not an agent-specific access guarantee. Loading errors are visible and retryable.
 
-These commands run only from `updateRoute`; read-only refreshes never invoke them.
-
-The installed Homebrew 0.10.1 binary exposes these `route` commands and their JSON status/model companions, but the public `v0.10.1` tag does not contain the route command source and its manifest still declares 0.10.0. The service therefore treats the installed CLI help and behavior as the route-mutation contract; it does not infer an unverified direct route payload.
-
-Available route models come from `edgee route models --agent AGENT --json`. This preserves the installed CLI's agent-specific restrictions and uses the returned CLI `name` as the value passed back to `edgee route set`. The standalone catalog parser remains public for contract tests, but the production route picker does not substitute the global catalog for the agent-filtered CLI result.
+Edgee CLI 0.11.1 removed the previous `route models` command. The older route command parsers and service mutation method remain for future work, but the app cannot invoke route mutations while switching is unavailable.
 
 ## Source contracts
 

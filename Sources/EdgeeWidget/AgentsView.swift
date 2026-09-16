@@ -84,19 +84,19 @@ struct RouteModelPreview: View {
                     ProgressView().controlSize(.mini)
                     Text("Loading models from Edgee…")
                 } else {
-                    Text("\(models.count) available models")
+                    Text("\(models.count) catalog models")
                 }
                 Spacer()
                 Button { store.loadModels(for: agent.id) } label: {
                     Image(systemName: "arrow.clockwise")
                 }
                 .buttonStyle(.plain).foregroundStyle(Theme.mint).disabled(loading)
-                .accessibilityLabel("Reload available models")
+                .accessibilityLabel("Reload catalog models")
             }.font(.system(size: 10)).foregroundStyle(Theme.muted).frame(height: 18)
 
             if let error = store.modelErrors[agent.id] {
                 VStack(alignment: .leading, spacing: 6) {
-                    Label("Could not load available models", systemImage: "exclamationmark.circle")
+                    Label("Could not load catalog models", systemImage: "exclamationmark.circle")
                         .foregroundStyle(Theme.amber)
                     Text(error).foregroundStyle(Theme.muted).lineLimit(3).help(error)
                     Button("Try again") { store.loadModels(for: agent.id) }
@@ -112,7 +112,7 @@ struct RouteModelPreview: View {
                         modelRow(name: model.name, id: model.id)
                     }
                     if models.isEmpty && !loading && store.modelErrors[agent.id] == nil {
-                        Text("No routable models returned for this agent.")
+                        Text("No models returned by the Edgee catalog.")
                             .font(.system(size: 10)).foregroundStyle(Theme.muted).padding(8)
                     }
                 }
