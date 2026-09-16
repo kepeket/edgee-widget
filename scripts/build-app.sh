@@ -117,7 +117,13 @@ RESOURCE_BUNDLE="${RESOURCE_BIN_DIR}/EdgeeWidget_EdgeeWidget.bundle"
 cp -R "$RESOURCE_BUNDLE" "$RESOURCES_DIR/"
 if [[ "$UNIVERSAL" == "1" ]]; then
     lipo -create "$BINARY_PATH" "${INTEL_BIN_DIR}/EdgeeWidget" -output "${MACOS_DIR}/EdgeeWidget"
-    lipo "${MACOS_DIR}/EdgeeWidget" -verify_arch arm64 x86_64
+    BUILT_ARCHS="$(lipo -archs "${MACOS_DIR}/EdgeeWidget")"
+    for required_arch in arm64 x86_64; do
+        case " $BUILT_ARCHS " in
+            *" $required_arch "*) ;;
+            *) die "built executable is missing $required_arch" ;;
+        esac
+    done
 else
     cp -- "$BINARY_PATH" "${MACOS_DIR}/EdgeeWidget"
 fi

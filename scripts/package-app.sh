@@ -34,6 +34,17 @@ plist_value() {
     die "missing or invalid $2 in $1"
 }
 
+assert_universal() {
+  local architectures
+  architectures="$(/usr/bin/lipo -archs "$1")" || die "cannot inspect executable architectures"
+  for required_arch in arm64 x86_64; do
+    case " $architectures " in
+      *" $required_arch "*) ;;
+      *) die "executable is missing $required_arch: $1" ;;
+    esac
+  done
+}
+
 assert_simple_output_dir() {
   local path="$1"
   [ -n "$path" ] || die "--output-dir requires a non-empty path"
@@ -129,8 +140,7 @@ esac
 
 app_executable="$app_source/Contents/MacOS/$executable_name"
 [ -f "$app_executable" ] || die "missing app executable: $app_executable"
-/usr/bin/lipo "$app_executable" -verify_arch arm64 x86_64 >/dev/null 2>&1 ||
-  die "app executable is not universal arm64/x86_64"
+assert_universal "$app_executable"
 
 /usr/bin/codesign --verify --deep --strict "$app_source" || die "input app signature is invalid"
 
@@ -277,8 +287,7 @@ payload_app="$expanded_pkg/EdgeePulse-component.pkg/Payload/Applications/$DEPLOY
   die "package payload has the wrong bundle identifier"
 [ "$(plist_value "$payload_app/Contents/Info.plist" CFBundleShortVersionString)" = "$version" ] ||
   die "package payload has the wrong version"
-/usr/bin/lipo "$payload_app/Contents/MacOS/$executable_name" -verify_arch arm64 x86_64 >/dev/null 2>&1 ||
-  die "package payload is not universal arm64/x86_64"
+assert_universal "$payload_app/Contents/MacOS/$executable_name"
 
 built_zip="$work_dir/$artifact_base.zip"
 /usr/bin/ditto -c -k --sequesterRsrc --keepParent "$staged_app" "$built_zip"

@@ -35,8 +35,12 @@ jobs:
       - name: Verify signed bundle and branding resources
         run: |
           codesign --verify --deep --strict build/universal/Edgee.app
-          test -f build/universal/Edgee.app/Contents/Resources/EdgeeWidget_EdgeeWidget.bundle/EdgeeMark.pdf
-          test -f build/universal/Edgee.app/Contents/Resources/EdgeeWidget_EdgeeWidget.bundle/EdgeeWordmark.pdf
+          brand_resources=build/universal/Edgee.app/Contents/Resources/EdgeeWidget_EdgeeWidget.bundle
+          if [ -d "$brand_resources/Contents/Resources" ]; then
+            brand_resources="$brand_resources/Contents/Resources"
+          fi
+          test -f "$brand_resources/EdgeeMark.pdf"
+          test -f "$brand_resources/EdgeeWordmark.pdf"
 
       - name: Build unsigned review installer
         run: ./scripts/package-app.sh --unsigned

@@ -35,8 +35,18 @@ for entry in "$PAYLOAD"/* "$PAYLOAD/Applications"/*; do
 done
 [[ "$(xml "$COMPONENT/PackageInfo" 'string(/pkg-info/@relocatable)')" == false ]] || fail 'package is relocatable'
 [[ -f "$APP/Contents/Resources/LICENSE" ]] || fail 'license missing'
-[[ -f "$APP/Contents/Resources/EdgeeWidget_EdgeeWidget.bundle/EdgeeMark.pdf" ]] || fail 'branding missing'
-[[ -f "$APP/Contents/Resources/EdgeeWidget_EdgeeWidget.bundle/EdgeeWordmark.pdf" ]] || fail 'wordmark missing'
-lipo "$APP/Contents/MacOS/EdgeeWidget" -verify_arch arm64 x86_64
+BRAND_RESOURCES="$APP/Contents/Resources/EdgeeWidget_EdgeeWidget.bundle"
+if [[ -d "$BRAND_RESOURCES/Contents/Resources" ]]; then
+  BRAND_RESOURCES="$BRAND_RESOURCES/Contents/Resources"
+fi
+[[ -f "$BRAND_RESOURCES/EdgeeMark.pdf" ]] || fail 'branding missing'
+[[ -f "$BRAND_RESOURCES/EdgeeWordmark.pdf" ]] || fail 'wordmark missing'
+ARCHITECTURES="$(lipo -archs "$APP/Contents/MacOS/EdgeeWidget")"
+for required_arch in arm64 x86_64; do
+  case " $ARCHITECTURES " in
+    *" $required_arch "*) ;;
+    *) echo "Package executable is missing $required_arch" >&2; exit 1 ;;
+  esac
+done
 codesign --verify --deep --strict "$APP"
 echo "Verified Edgee Pulse $VERSION: universal app, fixed managed path, macOS 14+, no installer scripts."
