@@ -735,7 +735,7 @@ private final class OfficialEdgeeRedirectDelegate: NSObject, URLSessionTaskDeleg
 
 // MARK: - Process execution
 
-private enum ProcessRunner {
+enum ProcessRunner {
     private static func readBounded(_ handle: FileHandle, limit: Int) throws -> Data {
         var output = Data()
         var exceeded = false
@@ -791,6 +791,7 @@ private enum ProcessRunner {
                 }
                 try await Task.sleep(nanoseconds: 50_000_000)
             }
+            try Task.checkCancellation()
         } catch {
             if process.isRunning { Darwin.kill(process.processIdentifier, SIGKILL) }
             _ = try? await stderrTask.value
@@ -798,7 +799,9 @@ private enum ProcessRunner {
             throw error
         }
 
-        process.waitUntilExit()
+        // isRunning is already false. Do not call waitUntilExit from an async
+        // task: it can wait on a different thread's run loop after suspension
+        // and never return, even though the child has exited.
         let stdout = try await stdoutTask.value
         _ = try? await stderrTask.value // Intentionally discarded: it may contain login URLs.
         guard stdout.count <= 8 * 1_024 * 1_024 else {
