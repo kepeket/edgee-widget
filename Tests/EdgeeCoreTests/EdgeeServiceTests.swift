@@ -77,6 +77,70 @@ final class EdgeeServiceTests: XCTestCase {
         XCTAssertEqual(usage.tokens.first(where: { $0.kind == .cacheRead })?.cost ?? -1, 0.3, accuracy: 0.000000001)
     }
 
+    func testUsageCombinesRepeatedModelRowsWithoutLosingUsage() throws {
+        // Equal counters can represent separate usage buckets and must also be summed.
+        let data = Data(#"""
+        {
+          "summary": {"total_requests": 21, "total_cost": 11040000000, "total_tokens": 210},
+          "stats_by_model": [
+            {"model":"anthropic/claude-sonnet-5","total_tokens":10,"total_cost":1000000000,"total_requests":1},
+            {"model":"openai/gpt-5.6-luna","total_tokens":40,"total_cost":4000000000,"total_requests":4},
+            {"model":"anthropic/claude-sonnet-5","total_tokens":20,"total_cost":2000000000,"total_requests":2},
+            {"model":"openai/gpt-5.6-luna","total_tokens":50,"total_cost":500000000,"total_requests":5},
+            {"model":"anthropic/claude-haiku-4-5","total_tokens":10,"total_cost":40000000,"total_requests":1},
+            {"model":"anthropic/claude-sonnet-5","total_tokens":30,"total_cost":3000000000,"total_requests":3},
+            {"model":"openai/gpt-5.6-luna","total_tokens":50,"total_cost":500000000,"total_requests":5}
+          ]
+        }
+        """#.utf8)
+
+        for period in UsagePeriod.allCases {
+            let usage = try EdgeeService.parseUsage(data, period: period)
+            XCTAssertEqual(usage.period, period)
+            XCTAssertEqual(usage.models.map(\.id), [
+                "anthropic/claude-sonnet-5", "openai/gpt-5.6-luna", "anthropic/claude-haiku-4-5"
+            ])
+            XCTAssertEqual(Set(usage.models.map(\.id)).count, usage.models.count)
+            let sonnet = try XCTUnwrap(usage.models.first { $0.id == "anthropic/claude-sonnet-5" })
+            XCTAssertEqual(sonnet.name, sonnet.id)
+            XCTAssertEqual(sonnet.cost, 6, accuracy: 0.000000001)
+            XCTAssertEqual(sonnet.tokens, 60)
+            XCTAssertEqual(sonnet.requests, 6)
+            let luna = try XCTUnwrap(usage.models.first { $0.id == "openai/gpt-5.6-luna" })
+            XCTAssertEqual(luna.cost, 5, accuracy: 0.000000001)
+            XCTAssertEqual(luna.tokens, 140)
+            XCTAssertEqual(luna.requests, 14)
+            XCTAssertEqual(usage.totalCost, 11.04, accuracy: 0.000000001)
+            XCTAssertEqual(usage.totalTokens, 210)
+            XCTAssertEqual(usage.requests, 21)
+            XCTAssertEqual(usage.models.reduce(0) { $0 + $1.cost }, usage.totalCost, accuracy: 0.000000001)
+            XCTAssertEqual(usage.models.reduce(0) { $0 + $1.tokens }, usage.totalTokens)
+            XCTAssertEqual(usage.models.reduce(0) { $0 + $1.requests }, usage.requests)
+        }
+    }
+
+    func testUsageKeepsDistinctModelIDsAndOrdersEqualCostsDeterministically() throws {
+        let data = Data(#"""
+        {
+          "summary": {"total_requests":2,"total_cost":2000000000,"total_tokens":20},
+          "stats_by_model": [
+            {"model":"provider-b/model","total_tokens":10,"total_cost":1000000000,"total_requests":1},
+            {"model":"provider-a/model","total_tokens":10,"total_cost":1000000000,"total_requests":1}
+          ]
+        }
+        """#.utf8)
+        let usage = try EdgeeService.parseUsage(data, period: .day)
+        XCTAssertEqual(usage.models.map(\.id), ["provider-a/model", "provider-b/model"])
+        XCTAssertEqual(usage.models.map(\.cost), [1, 1])
+    }
+
+    func testUsageAcceptsEmptyModelBreakdown() throws {
+        for models in ["", ", \"stats_by_model\": []"] {
+            let data = Data("{\"summary\":{\"total_requests\":0,\"total_cost\":0,\"total_tokens\":0}\(models)}".utf8)
+            XCTAssertTrue(try EdgeeService.parseUsage(data, period: .day).models.isEmpty)
+        }
+    }
+
     func testUsageRequiresSummaryTotals() {
         let responses = [
             #"{"summary":{"total_cost":1,"total_tokens":2}}"#,
