@@ -43,8 +43,8 @@ This builds the app with hardened runtime and a secure signing timestamp, submit
 
 ```sh
 codesign --verify --deep --strict build/universal/Edgee.app
-pkgutil --check-signature dist/Edgee-Pulse-0.1.6-universal.pkg
-spctl --assess --type install --verbose=2 dist/Edgee-Pulse-0.1.6-universal.pkg
+pkgutil --check-signature dist/jamf-0.1.8/Edgee-Pulse-0.1.8-universal.pkg
+spctl --assess --type install --verbose=2 dist/jamf-0.1.8/Edgee-Pulse-0.1.8-universal.pkg
 (cd dist && shasum -a 256 -c SHA256SUMS)
 ```
 
