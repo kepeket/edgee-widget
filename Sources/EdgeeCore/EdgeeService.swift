@@ -254,15 +254,27 @@ public actor EdgeeService: EdgeeServing {
             },
             summary.outputTokens.map { TokenUsage(kind: .output, count: $0, cost: dollars(summary.outputCost)) }
         ].compactMap { $0 }
-        let models = response.statsByModel.map {
-            ModelUsage(
-                id: $0.model,
-                name: $0.model,
-                tokens: $0.totalTokens,
-                cost: $0.totalCost / 1_000_000_000,
-                requests: Int(clamping: $0.totalRequests)
+        // The API can split a model's usage across keys and providers. Combine
+        // every bucket so Model Mix has one row (and one SwiftUI ID) per model.
+        let modelGroups = Dictionary(grouping: response.statsByModel, by: \.model)
+        let models: [ModelUsage] = modelGroups.map { entry in
+            let model = entry.key
+            let rows = entry.value
+            let tokens: Double = rows.reduce(0) { $0 + $1.totalTokens }
+            let cost: Double = rows.reduce(0) { $0 + $1.totalCost }
+            let requests: Int64 = rows.reduce(0) { $0 + $1.totalRequests }
+            return ModelUsage(
+                id: model,
+                name: model,
+                tokens: tokens,
+                cost: cost / 1_000_000_000,
+                requests: Int(clamping: requests)
             )
-        }.sorted { $0.cost > $1.cost }
+        }
+        let sortedModels = models.sorted {
+            if $0.cost == $1.cost { return $0.id < $1.id }
+            return $0.cost > $1.cost
+        }
         let series = response.statsByTime.data.compactMap { row -> UsagePoint? in
             guard let date = parseTimestamp(row.timestamp) else { return nil }
             return UsagePoint(date: date, cost: row.totalCost / 1_000_000_000, tokens: row.totalTokens)
@@ -287,7 +299,7 @@ public actor EdgeeService: EdgeeServing {
             requests: Int(clamping: summary.totalRequests),
             savedCost: savedCost,
             tokens: tokens,
-            models: models,
+            models: sortedModels,
             series: series,
             sessions: sessions,
             fetchedAt: Date(),

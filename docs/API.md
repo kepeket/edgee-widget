@@ -40,6 +40,8 @@ Content-Type: application/json
 
 The deployed response contains `summary`, `stats_by_model`, and `stats_by_time`. Monetary fields are integer nanoUSD and are divided by `1_000_000_000`. `token_cost_savings` is not mapped to money. `savedCost` is the sum of the explicitly monetary `tool_compression_cost_savings`, `output_cost_savings`, and `mcp_surface_cost_savings` fields when any are present.
 
+`stats_by_model` can contain multiple usage buckets for the same model across API keys and providers. The parser groups rows by the exact `model` identifier and sums cost, tokens, and requests before producing `ModelUsage`. Cost is summed in nanoUSD before conversion. Each model therefore has one stable, unique UI identity; equal costs are ordered by model identifier. Summary totals remain those supplied by the API.
+
 Token categories map as follows:
 
 | Domain category | Count | Cost |
