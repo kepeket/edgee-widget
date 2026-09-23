@@ -5,17 +5,19 @@ IFS=$'\n\t'
 
 readonly DEFAULT_APP_SOURCE="build/universal/Edgee.app"
 readonly DEPLOYED_APP_NAME="Edgee Pulse.app"
-readonly BUNDLE_ID="ai.edgee.widget"
-readonly PACKAGE_ID="ai.edgee.widget.pkg"
+SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
+source "${SCRIPT_DIR}/package-identity.sh"
 readonly MINIMUM_MACOS_VERSION="14.0"
 
 usage() {
   cat <<'EOF'
 Usage: scripts/package-app.sh [--unsigned] [--notarize] [--app PATH] [--output-dir PATH]
 
-Packages an existing app for Jamf deployment. The default input is
+Packages an existing app for managed deployment. The default input is
 build/universal/Edgee.app. The app is never built by this script. Production
-packages require INSTALLER_SIGN_IDENTITY. Notarization also requires
+packages require EDGEE_BUNDLE_ID, EDGEE_PACKAGE_ID, and INSTALLER_SIGN_IDENTITY.
+EDGEE_BUNDLE_ID must match the built app. Unsigned packages default their receipt
+ID to the app bundle ID plus .pkg. Notarization also requires
 NOTARY_PROFILE.
 EOF
 }
@@ -129,7 +131,7 @@ minimum_macos="$(plist_value "$info_plist" LSMinimumSystemVersion)"
 executable_name="$(plist_value "$info_plist" CFBundleExecutable)"
 [ "$executable_name" = "EdgeeWidget" ] || die "unexpected app executable"
 
-[ "$bundle_id" = "$BUNDLE_ID" ] || die "unexpected bundle identifier: $bundle_id"
+package_id="$(edgee_resolve_package_id "$bundle_id" "$unsigned")" || exit 1
 [ "$minimum_macos" = "$MINIMUM_MACOS_VERSION" ] ||
   die "LSMinimumSystemVersion must be $MINIMUM_MACOS_VERSION (found $minimum_macos)"
 [ "$version" = "$bundle_version" ] ||
@@ -227,7 +229,7 @@ EOF
 
 component_pkg="$work_dir/EdgeePulse-component.pkg"
 /usr/bin/pkgbuild --root "$payload_root" \
-  --identifier "$PACKAGE_ID" \
+  --identifier "$package_id" \
   --version "$version" \
   --ownership recommended \
   --component-plist "$component_plist" \
@@ -249,9 +251,9 @@ cat >"$distribution_xml" <<EOF
     <line choice="default"/>
   </choices-outline>
   <choice id="default" visible="false">
-    <pkg-ref id="$PACKAGE_ID"/>
+    <pkg-ref id="$package_id"/>
   </choice>
-  <pkg-ref id="$PACKAGE_ID" version="$version" onConclusion="none">EdgeePulse-component.pkg</pkg-ref>
+  <pkg-ref id="$package_id" version="$version" onConclusion="none">EdgeePulse-component.pkg</pkg-ref>
 </installer-gui-script>
 EOF
 
@@ -283,7 +285,7 @@ expanded_pkg="$work_dir/expanded-pkg"
 /usr/sbin/pkgutil --expand-full "$built_pkg" "$expanded_pkg"
 payload_app="$expanded_pkg/EdgeePulse-component.pkg/Payload/Applications/$DEPLOYED_APP_NAME"
 [ -d "$payload_app" ] || die "package payload does not contain Applications/$DEPLOYED_APP_NAME"
-[ "$(plist_value "$payload_app/Contents/Info.plist" CFBundleIdentifier)" = "$BUNDLE_ID" ] ||
+[ "$(plist_value "$payload_app/Contents/Info.plist" CFBundleIdentifier)" = "$bundle_id" ] ||
   die "package payload has the wrong bundle identifier"
 [ "$(plist_value "$payload_app/Contents/Info.plist" CFBundleShortVersionString)" = "$version" ] ||
   die "package payload has the wrong version"

@@ -162,6 +162,184 @@ final class AppStoreTests: XCTestCase {
         XCTAssertNil(store.modelErrors["claude"])
     }
 
+    func testWindowModeDefaultsPersistsAndDemoDoesNotOverwriteIt() async {
+        let suite = isolatedDefaults()
+        defer { suite.clear() }
+        let service = MockEdgeeService()
+        let store = AppStore(service: service, defaults: suite.defaults)
+        XCTAssertEqual(store.windowMode, .rolling)
+        store.setWindowMode(.calendar)
+        await waitFor { !store.isRefreshing }
+        XCTAssertEqual(suite.defaults.string(forKey: "usageWindowMode"), "calendar")
+        XCTAssertEqual(AppStore(service: service, defaults: suite.defaults).windowMode, .calendar)
+        let before = await service.calls()
+        store.enterDemo()
+        store.setWindowMode(.rolling)
+        store.selectPeriod(.month)
+        XCTAssertEqual(store.usage?.windowMode, .rolling)
+        XCTAssertEqual(store.dailyUsage?.windowMode, .rolling)
+        let after = await service.calls()
+        XCTAssertEqual(before, after)
+        XCTAssertEqual(suite.defaults.string(forKey: "usageWindowMode"), "calendar")
+        store.leaveDemo()
+        await waitFor { !store.isRefreshing }
+        XCTAssertEqual(store.windowMode, .calendar)
+        XCTAssertEqual(store.dailyUsage?.windowMode, .calendar)
+    }
+
+    func testUnknownPersistedModeFallsBackToRolling() {
+        let suite = isolatedDefaults()
+        defer { suite.clear() }
+        suite.defaults.set("future-mode", forKey: "usageWindowMode")
+        XCTAssertEqual(AppStore(service: MockEdgeeService(), defaults: suite.defaults).windowMode, .rolling)
+    }
+
+    func testCalendarWeekAndMonthMaintainTodayInMenuAndAlerts() async {
+        let suite = isolatedDefaults()
+        defer { suite.clear() }
+        suite.defaults.set("calendar", forKey: "usageWindowMode")
+        let date = ISO8601DateFormatter().date(from: "2026-09-23T18:00:00Z")!
+        let service = MockEdgeeService(
+            dayPlans: [.success(snapshot(.day, cost: 25, at: date)), .success(snapshot(.day, cost: 2, at: date))],
+            weekPlans: [.success(snapshot(.week, cost: 70, at: date))],
+            monthPlans: [.success(snapshot(.month, cost: 300, at: date))]
+        )
+        let store = AppStore(service: service, defaults: suite.defaults, now: { date })
+        store.selectPeriod(.week)
+        await waitFor { !store.isRefreshing }
+        XCTAssertEqual(store.usage?.totalCost, 70)
+        XCTAssertEqual(store.dailyUsage?.totalCost, 25)
+        XCTAssertTrue(store.statusDescription.contains("Today (UTC)"))
+        XCTAssertTrue(store.alerts.contains { $0.kind == .dailySpend })
+        store.selectPeriod(.month)
+        await waitFor { !store.isRefreshing }
+        XCTAssertEqual(store.usage?.totalCost, 300)
+        XCTAssertEqual(store.dailyUsage?.totalCost, 2)
+        XCTAssertFalse(store.alerts.contains { $0.kind == .dailySpend })
+        let modes = await service.usageModes()
+        XCTAssertEqual(modes, [.calendar, .calendar, .calendar, .calendar])
+    }
+
+    func testModeSwitchClearsOldTotalsAndRejectsSuspendedDailyResponse() async {
+        let suite = isolatedDefaults()
+        defer { suite.clear() }
+        let date = Date()
+        let service = MockEdgeeService(dayPlans: [
+            .success(snapshot(.day, cost: 50, at: date)),
+            .suspended(snapshot(.day, cost: 99, at: date)),
+            .success(snapshot(.day, cost: 2, at: date))
+        ])
+        let store = AppStore(service: service, defaults: suite.defaults)
+        store.refresh()
+        await waitFor { !store.isRefreshing }
+        XCTAssertFalse(store.alerts.isEmpty)
+        store.refresh()
+        await waitFor { await service.usageRequestCount(for: .day) == 2 }
+        store.setWindowMode(.calendar)
+        XCTAssertNil(store.usage)
+        XCTAssertNil(store.dailyUsage)
+        XCTAssertNil(store.lastRefresh)
+        XCTAssertTrue(store.alerts.isEmpty)
+        XCTAssertEqual(store.statusTitle, "—")
+        await waitFor { !store.isRefreshing }
+        await service.resumeUsage(for: .day)
+        await waitFor { await service.completedSuspendedUsageCount(for: .day) == 1 }
+        XCTAssertEqual(store.usage?.windowMode, .calendar)
+        XCTAssertEqual(store.dailyUsage?.totalCost, 2)
+        XCTAssertTrue(store.alerts.isEmpty)
+    }
+
+    func testModeSwitchRejectsSuspendedSelectedPeriodResponse() async {
+        let suite = isolatedDefaults()
+        defer { suite.clear() }
+        let service = MockEdgeeService(weekPlans: [.suspended(snapshot(.week, cost: 99))])
+        let store = AppStore(service: service, defaults: suite.defaults)
+        store.selectPeriod(.week)
+        await waitFor { await service.usageRequestCount(for: .week) == 1 }
+        store.setWindowMode(.calendar)
+        store.selectPeriod(.month)
+        await waitFor { !store.isRefreshing }
+        await service.resumeUsage(for: .week)
+        await waitFor { await service.completedSuspendedUsageCount(for: .week) == 1 }
+        XCTAssertEqual(store.usage?.period, .month)
+        XCTAssertEqual(store.usage?.windowMode, .calendar)
+        XCTAssertEqual(store.dailyUsage?.windowMode, .calendar)
+        XCTAssertEqual(store.dailyUsage?.totalCost, 1)
+    }
+
+    func testCalendarRolloverClearsYesterdayEvenIfRefreshFails() async {
+        let suite = isolatedDefaults()
+        defer { suite.clear() }
+        suite.defaults.set("calendar", forKey: "usageWindowMode")
+        var date = ISO8601DateFormatter().date(from: "2026-09-23T23:59:59Z")!
+        let service = MockEdgeeService(dayPlans: [.success(snapshot(.day, cost: 50, at: date)), .failure])
+        let store = AppStore(service: service, defaults: suite.defaults, now: { date })
+        store.refresh()
+        await waitFor { !store.isRefreshing }
+        XCTAssertFalse(store.alerts.isEmpty)
+        date = date.addingTimeInterval(2)
+        store.refresh()
+        XCTAssertNil(store.dailyUsage)
+        XCTAssertNil(store.usage)
+        XCTAssertTrue(store.alerts.isEmpty)
+        await waitFor { !store.isRefreshing }
+        XCTAssertNotNil(store.errorMessage)
+        XCTAssertNil(store.lastRefresh)
+        XCTAssertEqual(store.statusTitle, "—")
+    }
+
+    func testCalendarRequestCrossingMidnightIsDiscardedAndRetried() async {
+        let suite = isolatedDefaults()
+        defer { suite.clear() }
+        suite.defaults.set("calendar", forKey: "usageWindowMode")
+        var date = ISO8601DateFormatter().date(from: "2026-09-23T23:59:59Z")!
+        let service = MockEdgeeService(dayPlans: [
+            .suspended(snapshot(.day, cost: 50, at: date)),
+            .success(snapshot(.day, cost: 0, at: date.addingTimeInterval(2)))
+        ])
+        let store = AppStore(service: service, defaults: suite.defaults, now: { date })
+        store.refresh()
+        await waitFor { await service.usageRequestCount(for: .day) == 1 }
+        date = date.addingTimeInterval(2)
+        await service.resumeUsage(for: .day)
+        await waitFor { !store.isRefreshing }
+        let requests = await service.usageRequestCount(for: .day)
+        XCTAssertEqual(requests, 2)
+        XCTAssertEqual(store.dailyUsage?.totalCost, 0)
+        XCTAssertEqual(store.usage?.effectiveWindow.start, ISO8601DateFormatter().date(from: "2026-09-24T00:00:00Z"))
+        XCTAssertTrue(store.alerts.isEmpty)
+    }
+
+    func testNotificationThrottleResetsAtCalendarMidnightAndModeSwitch() async {
+        let suite = isolatedDefaults()
+        defer { suite.clear() }
+        suite.defaults.set("calendar", forKey: "usageWindowMode")
+        suite.defaults.set(true, forKey: "notificationsEnabled")
+        var date = ISO8601DateFormatter().date(from: "2026-09-23T23:59:00Z")!
+        let nextDay = date.addingTimeInterval(120)
+        let service = MockEdgeeService(dayPlans: [
+            .success(snapshot(.day, cost: 30, at: date)),
+            .success(snapshot(.day, cost: 30, at: date)),
+            .success(snapshot(.day, cost: 30, at: nextDay)),
+            .success(snapshot(.day, cost: 30, at: nextDay))
+        ])
+        var delivered: [String] = []
+        let store = AppStore(service: service, defaults: suite.defaults, now: { date }, sendNotification: { _, key in delivered.append(key) })
+        store.refresh()
+        await waitFor { !store.isRefreshing }
+        XCTAssertEqual(delivered, ["daily-spend:critical"])
+        store.refresh()
+        await waitFor { !store.isRefreshing }
+        XCTAssertEqual(delivered.count, 1)
+        date = nextDay
+        store.refresh()
+        await waitFor { !store.isRefreshing }
+        XCTAssertEqual(delivered.count, 2)
+        store.setWindowMode(.rolling)
+        await waitFor { !store.isRefreshing }
+        XCTAssertEqual(delivered.count, 3)
+    }
+
     private func waitFor(
         timeout: TimeInterval = 1,
         file: StaticString = #filePath,
@@ -185,7 +363,7 @@ final class AppStoreTests: XCTestCase {
         return DefaultsSuite(name: name, defaults: defaults)
     }
 
-    private func snapshot(_ period: UsagePeriod, cost: Double) -> UsageSnapshot {
+    private func snapshot(_ period: UsagePeriod, cost: Double, at date: Date = Date(timeIntervalSince1970: 1_700_000_000)) -> UsageSnapshot {
         UsageSnapshot(
             period: period,
             totalCost: cost,
@@ -193,7 +371,7 @@ final class AppStoreTests: XCTestCase {
             requests: 1,
             tokens: [],
             models: [],
-            fetchedAt: Date(timeIntervalSince1970: 1_700_000_000),
+            fetchedAt: date,
             scope: "Test account"
         )
     }
@@ -235,6 +413,7 @@ private actor MockEdgeeService: EdgeeServing {
     private var suspended: [String: [CheckedContinuation<Void, Never>]] = [:]
     private var completedSuspended: [String: Int] = [:]
     private var recordedCalls: [Call] = []
+    private var recordedModes: [UsageWindowMode] = []
     private let failMutations: Bool
     private var modelFailures: Int
     private let models: [AvailableModel]
@@ -262,7 +441,8 @@ private actor MockEdgeeService: EdgeeServing {
         return EdgeeIdentity(name: "test@example.com", organization: "Test account")
     }
 
-    func usage(for period: UsagePeriod) async throws -> UsageSnapshot {
+    func usage(for period: UsagePeriod, mode: UsageWindowMode) async throws -> UsageSnapshot {
+        recordedModes.append(mode)
         recordedCalls.append(.usage(period))
         let key = period.rawValue
         var periodPlans = plans[key] ?? []
@@ -271,7 +451,9 @@ private actor MockEdgeeService: EdgeeServing {
 
         switch plan {
         case let .success(snapshot):
-            return snapshot
+            var result = snapshot
+            result.window = UsageWindow(period: period, mode: mode, end: snapshot.fetchedAt)
+            return result
         case .failure:
             throw MockError.plannedFailure
         case let .suspended(snapshot):
@@ -279,7 +461,9 @@ private actor MockEdgeeService: EdgeeServing {
                 suspended[key, default: []].append(continuation)
             }
             completedSuspended[key, default: 0] += 1
-            return snapshot
+            var result = snapshot
+            result.window = UsageWindow(period: period, mode: mode, end: snapshot.fetchedAt)
+            return result
         }
     }
 
@@ -309,6 +493,7 @@ private actor MockEdgeeService: EdgeeServing {
     }
 
     func calls() -> [Call] { recordedCalls }
+    func usageModes() -> [UsageWindowMode] { recordedModes }
 
     func usageRequests() -> [UsagePeriod] {
         recordedCalls.compactMap {

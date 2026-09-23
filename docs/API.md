@@ -30,7 +30,7 @@ Authorization: Bearer {user_token}
 Content-Type: application/json
 
 {
-  "period": "24h | 7d | 30d",
+  "period": "24h | 7d | 30d | today | this_week | this_month",
   "user_id": ["{authenticated_user_id}"],
   "interval": "hour | day"
 }
@@ -55,13 +55,24 @@ Token categories map as follows:
 
 `total_tokens` also includes `reasoning_output_tokens`. `Domain.swift` currently has no reasoning `TokenKind`, so the four displayed category counts do not sum to the total when reasoning was used. The snapshot notice says: “Reasoning tokens are included in the total.”
 
-The 24-hour series uses hourly buckets. The 7-day and 30-day series request calendar-day buckets from the Console API. The domain's rolling period labels remain unchanged.
+Settings → Stats period stores `usageWindowMode` (`rolling` or `calendar`). Missing or unknown values default to Rolling. Demo changes do not overwrite this preference.
+
+| Mode | Day | Week | Month |
+| --- | --- | --- | --- |
+| Rolling | Day / `24h` | Week / `7d` | Month / `30d` |
+| Calendar | Today / `today` | This week / `this_week` | This month / `this_month` |
+
+Daily series request hourly buckets; weekly/monthly series request daily buckets. These exact presets were checked against the live, member-scoped API on 2026-09-23. Arbitrary period strings are unsafe: the server silently falls back to 24 hours for unknown values. Aggregate totals use the Console's own presets rather than a client-computed custom range.
+
+`UsageWindow` captures the request time once. Calendar session bounds and reset tracking use UTC midnight, Monday-start weeks, and the first day of the month. They are independent of the Mac's timezone and daylight-saving transitions. The API does not return explicit timezone metadata: UTC/Monday auxiliary boundaries are inferred from the observed UTC buckets and matching custom-date/preset totals; aggregate totals remain server-defined. This convention is isolated in `UsageWindow` if Edgee changes or clarifies it. Rolling spans are exactly 24 hours, 7 × 24 hours, and 30 × 24 hours.
+
+The menu bar and watchdog always use the selected mode's **daily** snapshot, even while viewing week/month. Mode changes clear old figures, alerts, session baselines, and notification throttles and immediately refresh. A generation check rejects responses from a previous selection. Calendar rollover clears expired totals before fetching, including when offline, and requests crossing midnight are discarded and retried. Wake, clock changes, and timezone changes trigger a fresh request; ordinary polling remains every 60 seconds. Calendar resets are observed at the next poll or wake. Notifications remain limited to once per alert level per hour within a window.
 
 Session history is fetched read-only from:
 
 ```http
 GET /v1/organizations/{org_id}/sessions
-    ?from_date={rolling_window_start}
+    ?from_date={selected_window_start}
     &to_date={request_time}
     &user_id[]={authenticated_user_id}
     &api_key_id[]={selected_profile_key_id}
@@ -69,7 +80,7 @@ GET /v1/organizations/{org_id}/sessions
     &page_size=100
 ```
 
-Both the authenticated member ID and every configured key ID from the selected profile are sent. Returned rows are accepted only when `key_uuid` matches one of those configured IDs and `last_request` remains inside the requested rolling window, so an ignored server filter cannot be mislabeled as personal data. All pages are read, with a defensive 100-page bound that rejects a still-incomplete response rather than returning a partial list.
+Both the authenticated member ID and every configured key ID from the selected profile are sent. Returned rows are accepted only when `key_uuid` matches one of those configured IDs and `last_request` remains inside the requested window, so an ignored server filter cannot be mislabeled as personal data. All pages are read, with a defensive 100-page bound that rejects a still-incomplete response rather than returning a partial list.
 
 If session history is unavailable, the app retains the successfully fetched usage totals, skips session spike checks, and displays a session-monitoring notice.
 

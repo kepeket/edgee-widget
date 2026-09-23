@@ -30,6 +30,27 @@ final class WatchdogTests: XCTestCase {
         XCTAssertTrue(alert.message.contains("trailing 24-hour"))
     }
 
+    func testCalendarDailyBudgetsAndFrontierAlertUseTodayWording() throws {
+        let usage = snapshot(
+            cost: 20,
+            tokens: 10_000_000,
+            models: [ModelUsage(id: "frontier", name: "Frontier", tokens: 1, cost: 14, requests: 1)],
+            windowMode: .calendar
+        )
+        let alerts = WatchdogEngine.evaluate(snapshot: usage, previous: nil, settings: WatchdogSettings())
+
+        let spend = try XCTUnwrap(alerts.first { $0.kind == .dailySpend })
+        XCTAssertEqual(spend.title, "Today's spend is high")
+        XCTAssertTrue(spend.message.hasPrefix("Today:"))
+        XCTAssertFalse(spend.message.contains("trailing 24-hour"))
+        let tokens = try XCTUnwrap(alerts.first { $0.kind == .dailyTokens })
+        XCTAssertEqual(tokens.title, "Today's token use is high")
+        XCTAssertTrue(tokens.message.hasPrefix("Today:"))
+        let frontier = try XCTUnwrap(alerts.first { $0.kind == .frontierShare })
+        XCTAssertEqual(frontier.title, "Today's frontier-model spend is high")
+        XCTAssertTrue(frontier.message.contains("today's spend"))
+    }
+
     func testDailyTokenLimitDoesNotAlertBelowBoundary() {
         let settings = WatchdogSettings()
         let alerts = WatchdogEngine.evaluate(
@@ -252,6 +273,40 @@ final class WatchdogTests: XCTestCase {
         XCTAssertTrue(alert.message.contains("$3.00/hour"))
     }
 
+    func testSessionRateRequiresMatchingWindowModeAndCalendarBoundary() {
+        let earlierAt = Date(timeIntervalSince1970: 1_700_000_000)
+        let laterSameDay = earlierAt.addingTimeInterval(3_600)
+        let laterNextDay = Date(timeIntervalSince1970: 1_700_007_200)
+        let settings = WatchdogSettings(maximumSessionCostIncreasePerHour: 1)
+
+        let rollingBase = snapshot(cost: 1, tokens: 1, sessions: [session(cost: 1)], fetchedAt: earlierAt)
+        let calendarBase = snapshot(cost: 1, tokens: 1, sessions: [session(cost: 1)], fetchedAt: earlierAt, windowMode: .calendar)
+        let calendarSameDay = snapshot(cost: 4, tokens: 1, sessions: [session(cost: 4)], fetchedAt: laterSameDay, windowMode: .calendar)
+        let calendarNextDay = snapshot(cost: 4, tokens: 1, sessions: [session(cost: 4)], fetchedAt: laterNextDay, windowMode: .calendar)
+        let rollingAcrossMidnight = snapshot(cost: 4, tokens: 1, sessions: [session(cost: 4)], fetchedAt: laterNextDay)
+
+        XCTAssertFalse(WatchdogEngine.evaluate(
+            snapshot: calendarSameDay,
+            previous: WatchdogObservation(snapshot: rollingBase),
+            settings: settings
+        ).contains { $0.kind == .sessionCostIncrease })
+        XCTAssertFalse(WatchdogEngine.evaluate(
+            snapshot: calendarNextDay,
+            previous: WatchdogObservation(snapshot: calendarBase),
+            settings: settings
+        ).contains { $0.kind == .sessionCostIncrease })
+        XCTAssertTrue(WatchdogEngine.evaluate(
+            snapshot: calendarSameDay,
+            previous: WatchdogObservation(snapshot: calendarBase),
+            settings: settings
+        ).contains { $0.kind == .sessionCostIncrease })
+        XCTAssertTrue(WatchdogEngine.evaluate(
+            snapshot: rollingAcrossMidnight,
+            previous: WatchdogObservation(snapshot: rollingBase),
+            settings: settings
+        ).contains { $0.kind == .sessionCostIncrease })
+    }
+
     func testStaleAndNonMonotonicSamplesDoNotProduceSessionRateAlert() {
         let base = snapshot(cost: 1, tokens: 1, sessions: [session(cost: 1)], fetchedAt: day)
         let observation = WatchdogObservation(snapshot: base)
@@ -355,9 +410,11 @@ final class WatchdogTests: XCTestCase {
         tokens: Double,
         models: [ModelUsage] = [],
         sessions: [SessionUsage] = [],
-        fetchedAt: Date? = nil
+        fetchedAt: Date? = nil,
+        windowMode: UsageWindowMode = .rolling
     ) -> UsageSnapshot {
-        UsageSnapshot(
+        let timestamp = fetchedAt ?? day
+        var usage = UsageSnapshot(
             period: .day,
             totalCost: cost,
             totalTokens: tokens,
@@ -365,8 +422,10 @@ final class WatchdogTests: XCTestCase {
             tokens: [],
             models: models,
             sessions: sessions,
-            fetchedAt: fetchedAt ?? day
+            fetchedAt: timestamp
         )
+        usage.window = UsageWindow(period: .day, mode: windowMode, end: timestamp)
+        return usage
     }
 
     private func session(cost: Double, updatedAt: Date? = nil, id: String = "session-1") -> SessionUsage {
