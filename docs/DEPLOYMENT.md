@@ -1,4 +1,4 @@
-# Company deployment
+# Deployment
 
 Edgee Pulse is a per-user menu-bar app for macOS 14 or later. The distribution build is universal: Apple Silicon (`arm64`) and Intel (`x86_64`).
 
@@ -28,7 +28,7 @@ Routing is read-only while the “Soon available” feature is pending. Compress
 
 ## Build a signed and notarized production package
 
-On a signing Mac, install **Developer ID Application** and **Developer ID Installer** identities, each with its private key, in an accessible keychain. A Jamf device-management identity or an Apple Development certificate does not substitute for these identities. Xcode's command-line tools must be configured and its license accepted by the operator.
+On a signing Mac, install **Developer ID Application** and **Developer ID Installer** identities, each with its private key, in an accessible keychain. A device-management identity or an Apple Development certificate does not substitute for these identities. Xcode's command-line tools must be configured and its license accepted by the operator.
 
 Use Apple's `notarytool store-credentials` interactively to save notarization credentials to Keychain. Keep certificates, private keys, passwords, and notarization credentials out of this repository and out of chat. The scripts take a saved profile name, not a password.
 
@@ -39,13 +39,13 @@ export NOTARY_PROFILE='company-edgee-notary'
 make package
 ```
 
-This builds the app with hardened runtime and a secure signing timestamp, submits it to Apple for notarization, staples the app ticket, constructs the installer, then notarizes and staples the installer. The ZIP contains the stapled app. Inspect the completed artifacts and verify their signatures before uploading to Jamf:
+This builds the app with hardened runtime and a secure signing timestamp, submits it to Apple for notarization, staples the app ticket, constructs the installer, then notarizes and staples the installer. The ZIP contains the stapled app. Inspect the completed artifacts and verify their signatures before distribution:
 
 ```sh
 codesign --verify --deep --strict build/universal/Edgee.app
-pkgutil --check-signature dist/jamf-0.1.9/Edgee-Pulse-0.1.9-universal.pkg
-spctl --assess --type install --verbose=2 dist/jamf-0.1.9/Edgee-Pulse-0.1.9-universal.pkg
-(cd dist/jamf-0.1.9 && shasum -a 256 -c SHA256SUMS)
+pkgutil --check-signature dist/Edgee-Pulse-0.1.9-universal.pkg
+spctl --assess --type install --verbose=2 dist/Edgee-Pulse-0.1.9-universal.pkg
+(cd dist && shasum -a 256 -c SHA256SUMS)
 ```
 
 For signing without submission to Apple, run the build and `scripts/package-app.sh` separately; those artifacts carry a `-signed-unnotarized` suffix. The script refuses to overwrite existing artifacts; use a fresh `--output-dir` when rerunning packaging.
@@ -64,15 +64,13 @@ This creates clearly marked `*-unsigned.pkg` and `*-unsigned.zip` artifacts. The
 
 CI builds these review artifacts, runs tests, and verifies the package payload without installing it. No signing identities or credentials are needed for CI review builds. A successful unsigned build does not validate the production certificate or notarization configuration.
 
-## Jamf rollout
-
-Reference: [Jamf — Deploying a package using a policy](https://learn.jamf.com/r/en-US/jamf-pro-documentation-current/Deploying_a_Package_Using_a_Policy).
+## Managed rollout
 
 1. Use the signed, notarized `.pkg` and verify its SHA-256 checksum against the release's `SHA256SUMS`.
-2. For Qonto upgrades, replace the uploaded file in the existing [Edgee Pulse package 106](https://qonto.jamfcloud.com/view/settings/computer-management/packages/106?tab=general), retaining its stable display name and package ID so existing policy references stay valid. Verify the uploaded filename, size, checksum, and availability.
-3. Reuse the existing installation policy for upgrades; create a policy only for an initial rollout. Replacing a package does not itself rerun a policy that has already completed its configured frequency. Start with a small pilot group containing an Apple Silicon Mac and an Intel Mac, both on supported macOS versions. Scope production policies to macOS 14+.
-4. For the pilot, make the policy available in Self Service so employees can quit existing copies before updating. An automated rollout can use your normal check-in trigger after the pilot succeeds.
-5. Have employees launch `/Applications/Edgee Pulse.app`, connect their own Edgee profile, and optionally enable **Launch at login**. Do not launch the app from a root installer script.
+2. Upload the installer to your device-management system or software distribution service. For upgrades, preserve the existing package record and deployment references where supported. Verify the uploaded filename, size, checksum, and availability.
+3. Start with a small pilot group containing an Apple Silicon Mac and an Intel Mac, both on supported macOS versions. Target macOS 14+ and configure the deployment to run for devices that need the new version; replacing an uploaded file alone may not trigger an upgrade.
+4. For the pilot, make the installer available through your managed software catalog so users can quit existing copies before updating. Schedule an automated rollout after the pilot succeeds.
+5. Have users launch `/Applications/Edgee Pulse.app`, connect their own Edgee profile, and optionally enable **Launch at login**. Do not launch the app from a root installer script.
 6. Confirm the menu-bar cost refreshes, agent settings load, the side routing preview is read-only, and no extra standalone window opens. Check both architectures on real devices; a universal build alone is not an Intel runtime test.
 
 Inventory can use app bundle ID `ai.edgee.widget` / `CFBundleShortVersionString` and receipt ID `ai.edgee.widget.pkg`. Bump both app version fields before a new production release. Keep the install path and receipt ID stable for upgrades. Test upgrades with an existing CLI profile; personal settings should remain in the user's preferences.
