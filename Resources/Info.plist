@@ -9,7 +9,7 @@
 	<key>CFBundleIconFile</key>
 	<string>Edgee.icns</string>
 	<key>CFBundleIdentifier</key>
-	<string>ai.edgee.widget</string>
+	<string>org.example.edgee-pulse</string>
 	<key>CFBundleInfoDictionaryVersion</key>
 	<string>6.0</string>
 	<key>CFBundleName</key>

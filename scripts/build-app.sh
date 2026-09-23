@@ -13,6 +13,8 @@ Usage: scripts/build-app.sh [--release|--debug] [--universal]
 
 Builds the EdgeeWidget Swift package into build/Edgee.app.
 --universal builds arm64 + x86_64 into build/universal/Edgee.app.
+Set EDGEE_BUNDLE_ID to choose the app identifier. Ad-hoc builds default to
+org.example.edgee-pulse; signed builds require an explicit non-placeholder ID.
 Set SIGN_IDENTITY to use a signing identity; the default is ad-hoc signing.
 Set SWIFT_BUILD_FLAGS to append environment-specific SwiftPM flags.
 Set EDGEE_SWIFT_DISABLE_SANDBOX=1 to use a local SwiftPM/module cache in restricted environments.
@@ -45,6 +47,9 @@ while (($# > 0)); do
     esac
     shift
 done
+
+source "${SCRIPT_DIR}/package-identity.sh"
+RESOLVED_BUNDLE_ID="$(edgee_resolve_build_bundle_id "${SIGN_IDENTITY:--}")" || exit 1
 
 BUILD_DIR="${ROOT_DIR}/build"
 if [[ "$UNIVERSAL" == "1" ]]; then BUILD_DIR="${ROOT_DIR}/build/universal"; fi
@@ -129,6 +134,7 @@ else
 fi
 cp -- "${ROOT_DIR}/LICENSE" "$RESOURCES_DIR/LICENSE"
 cp -- "${ROOT_DIR}/Resources/Info.plist" "${CONTENTS_DIR}/Info.plist"
+/usr/libexec/PlistBuddy -c "Set :CFBundleIdentifier ${RESOLVED_BUNDLE_ID}" "${CONTENTS_DIR}/Info.plist"
 chmod 755 "${MACOS_DIR}/EdgeeWidget"
 
 SIGNING_IDENTITY="${SIGN_IDENTITY:--}"

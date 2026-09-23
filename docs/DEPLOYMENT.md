@@ -7,11 +7,15 @@ Edgee Pulse is a per-user menu-bar app for macOS 14 or later. The distribution b
 | Item | Value |
 | --- | --- |
 | Installed app | `/Applications/Edgee Pulse.app` |
-| App bundle ID | `ai.edgee.widget` |
-| Installer receipt ID | `ai.edgee.widget.pkg` |
+| App bundle ID | Build-time `EDGEE_BUNDLE_ID` |
+| Installer receipt ID | Packaging-time `EDGEE_PACKAGE_ID` |
 | Minimum macOS | 14.0 |
 | Architectures | arm64 and x86_64 |
 | Credentials | Each user's existing Edgee CLI profile |
+
+The source does not select a production namespace. Local ad-hoc builds use the reserved development placeholder `org.example.edgee-pulse`; unsigned installers default to that app's identifier plus `.pkg`. Set `EDGEE_BUNDLE_ID` to override the app ID and `EDGEE_PACKAGE_ID` to override the installer receipt independently. Use reverse-DNS identifiers in a namespace you control. Identifiers are validated before they are written to the bundle or installer XML.
+
+Signed builds require an explicit, non-placeholder `EDGEE_BUNDLE_ID`. Signed packages require both identifiers explicitly, and the app's embedded ID must match `EDGEE_BUNDLE_ID`. The scripts reject reserved example namespaces for production signing. Changing the environment after an app has been signed does not change its identity: rebuild it with the intended ID first.
 
 The installer intentionally does not use `/Applications/Edgee.app`: that name may belong to another Edgee application. Bundle relocation is disabled so upgrades target the managed installation rather than a developer checkout. Quit running copies before updating and launch the installed copy afterwards.
 
@@ -30,9 +34,12 @@ Routing is read-only while the “Soon available” feature is pending. Compress
 
 On a signing Mac, install **Developer ID Application** and **Developer ID Installer** identities, each with its private key, in an accessible keychain. A device-management identity or an Apple Development certificate does not substitute for these identities. Xcode's command-line tools must be configured and its license accepted by the operator.
 
-Use Apple's `notarytool store-credentials` interactively to save notarization credentials to Keychain. Keep certificates, private keys, passwords, and notarization credentials out of this repository and out of chat. The scripts take a saved profile name, not a password.
+Use Apple's `notarytool store-credentials` interactively to save notarization credentials to Keychain. Keep certificates, private keys, passwords, and notarization credentials out of this repository and out of chat. The scripts take a saved profile name, not a password. Signing identities and their private keys stay in macOS Keychain; none are bundled with the source. A signed app or installer carries the public certificate chain needed to verify its signature, never the private key. Signing exports and provisioning files are ignored by Git. CI uses ad-hoc signing and requires no personal certificates or notarization credentials.
 
 ```sh
+# Replace both placeholders with identifiers chosen for your distribution.
+export EDGEE_BUNDLE_ID='<your-app-bundle-id>'
+export EDGEE_PACKAGE_ID='<your-installer-receipt-id>'
 export SIGN_IDENTITY='Developer ID Application: COMPANY (TEAMID)'
 export INSTALLER_SIGN_IDENTITY='Developer ID Installer: COMPANY (TEAMID)'
 export NOTARY_PROFILE='company-edgee-notary'
@@ -43,6 +50,7 @@ This builds the app with hardened runtime and a secure signing timestamp, submit
 
 ```sh
 codesign --verify --deep --strict build/universal/Edgee.app
+./scripts/verify-package.sh dist/Edgee-Pulse-0.1.9-universal.pkg
 pkgutil --check-signature dist/Edgee-Pulse-0.1.9-universal.pkg
 spctl --assess --type install --verbose=2 dist/Edgee-Pulse-0.1.9-universal.pkg
 (cd dist && shasum -a 256 -c SHA256SUMS)
@@ -62,7 +70,7 @@ make package-unsigned
 
 This creates clearly marked `*-unsigned.pkg` and `*-unsigned.zip` artifacts. The app has a local ad-hoc signature; the installer has no Developer ID Installer signature, and neither artifact is notarized. They are for packaging validation and IT review, not the signed production deliverable. Do not disable Gatekeeper or strip quarantine to make a test package appear production-ready.
 
-CI builds these review artifacts, runs tests, and verifies the package payload without installing it. No signing identities or credentials are needed for CI review builds. A successful unsigned build does not validate the production certificate or notarization configuration.
+CI builds these review artifacts, runs tests, and verifies the package payload without installing it. No signing identities or credentials are needed for CI review builds. CI uses explicit reserved example IDs to exercise both overrides; the identity checks also cover the default development ID. A successful unsigned build does not validate the production certificate or notarization configuration.
 
 ## Managed rollout
 
@@ -73,7 +81,7 @@ CI builds these review artifacts, runs tests, and verifies the package payload w
 5. Have users launch `/Applications/Edgee Pulse.app`, connect their own Edgee profile, and optionally enable **Launch at login**. Do not launch the app from a root installer script.
 6. Confirm the menu-bar cost refreshes, agent settings load, the side routing preview is read-only, and no extra standalone window opens. Check both architectures on real devices; a universal build alone is not an Intel runtime test.
 
-Inventory can use app bundle ID `ai.edgee.widget` / `CFBundleShortVersionString` and receipt ID `ai.edgee.widget.pkg`. Bump both app version fields before a new production release. Keep the install path and receipt ID stable for upgrades. Test upgrades with an existing CLI profile; personal settings should remain in the user's preferences.
+Inventory can use your chosen app bundle ID with `CFBundleShortVersionString`, and your chosen installer receipt ID. Bump both app version fields before a new production release. Keep the install path and receipt ID stable for upgrades. Test upgrades with an existing CLI profile; personal settings should remain in the user's preferences when the bundle ID stays the same. Changing a deployed bundle ID changes the preferences domain and can affect notification permissions and login-item registration. Changing the receipt ID creates a separate installer identity. Treat an identifier change as a migration, not a routine version update; this configuration change does not modify already-distributed packages or migrate existing users automatically.
 
 For removal, quit the app, turn off its **Launch at login** setting, and remove only `/Applications/Edgee Pulse.app` using your approved MDM removal process. The app's preferences and Edgee CLI credentials are separate user data and are deliberately preserved. Forgetting the package receipt alone does not uninstall the app.
 

@@ -7,3 +7,16 @@ xcuserdata/
 .env
 work/
 dist/
+
+# Signing certificates, private keys, and provisioning data belong outside Git.
+*.[pP]12
+*.[pP][fF][xX]
+*.[pP][eE][mM]
+*.[kK][eE][yY]
+*.[cC][eE][rR]
+*.[cC][rR][tT]
+*.[dD][eE][rR]
+*.mobileprovision
+*.provisionprofile
+*.keychain
+*.keychain-db
