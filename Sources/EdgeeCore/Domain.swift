@@ -47,6 +47,9 @@ public struct SessionUsage: Identifiable, Codable, Sendable, Equatable {
 }
 public struct UsageSnapshot: Codable, Sendable, Equatable {
     public var period: UsagePeriod
+    public var window: UsageWindow?
+    public var effectiveWindow: UsageWindow { window ?? UsageWindow(period: period, end: fetchedAt) }
+    public var windowMode: UsageWindowMode { effectiveWindow.mode }
     public var totalCost: Double
     public var totalTokens: Double
     public var requests: Int
@@ -60,7 +63,8 @@ public struct UsageSnapshot: Codable, Sendable, Equatable {
     public var notice: String?
     public init(period: UsagePeriod, totalCost: Double, totalTokens: Double, requests: Int, savedCost: Double? = nil,
                 tokens: [TokenUsage], models: [ModelUsage], series: [UsagePoint] = [], sessions: [SessionUsage] = [],
-                fetchedAt: Date = Date(), scope: String = "Your usage", notice: String? = nil) {
+                fetchedAt: Date = Date(), scope: String = "Your usage", notice: String? = nil, window: UsageWindow? = nil) {
+        self.window = window
         self.period = period; self.totalCost = totalCost; self.totalTokens = totalTokens; self.requests = requests
         self.savedCost = savedCost; self.tokens = tokens; self.models = models; self.series = series; self.sessions = sessions
         self.fetchedAt = fetchedAt; self.scope = scope; self.notice = notice
@@ -96,10 +100,16 @@ public struct EdgeeIdentity: Sendable, Equatable {
 }
 public protocol EdgeeServing: Sendable {
     func identity() async throws -> EdgeeIdentity
-    func usage(for period: UsagePeriod) async throws -> UsageSnapshot
+    func usage(for period: UsagePeriod, mode: UsageWindowMode) async throws -> UsageSnapshot
     func agents() async throws -> [AgentConfiguration]
     func availableModels(agentID: String) async throws -> [AvailableModel]
     func updateSetting(agentID: String, setting: AgentSetting, enabled: Bool) async throws
     func updateRoute(agentID: String, modelID: String?) async throws
     func login() async throws
+}
+
+public extension EdgeeServing {
+    func usage(for period: UsagePeriod) async throws -> UsageSnapshot {
+        try await usage(for: period, mode: .rolling)
+    }
 }

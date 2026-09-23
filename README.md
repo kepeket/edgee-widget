@@ -14,7 +14,7 @@ Requires **macOS 14+**, **Xcode 16+ / Swift 6+**, and the [Edgee CLI](https://ww
 make run
 ```
 
-The app appears in your menu bar with your personal trailing 24-hour spend. Click it to open the panel. Right-click for refresh and quit. `⌘R` refreshes and Escape dismisses the popover. Pin it to keep it open.
+The app appears in your menu bar with your personal daily spend (trailing 24 hours by default). Click it to open the panel. Right-click for refresh and quit. `⌘R` refreshes and Escape dismisses the popover. Pin it to keep it open.
 
 To explore without an account:
 
@@ -26,12 +26,17 @@ Demo mode is visibly labeled, never makes API calls, and never changes your real
 
 ## What it does
 
-- **Usage:** trailing 24 hours, 7 days, or 30 days; total spend and requests; input, cache-write, cache-read, and output token volumes and costs; spend history; model mix by cost, tokens, or requests.
+- **Usage:** rolling 24 hours, 7 days, or 30 days, or calendar day/week/month to date; total spend and requests; input, cache-write, cache-read, and output token volumes and costs; spend history; model mix by cost, tokens, or requests.
 - **Agents:** existing agent keys from your active CLI profile; tool compression, tool surface reduction, and output brevity; current route display and an on-demand model catalog preview. Model switching is marked “Soon available” and cannot submit route changes.
 - **Watchdog:** spend/token budgets, frontier cost share, thinking-to-executor cost ratio, and session spend acceleration. Alerts link to agent controls. Nothing reroutes automatically.
 - **Native behavior:** minute-by-minute refresh, optional macOS notifications, launch at login, a pin-to-open popover, and a menu bar cost that stays on the daily window while you browse week/month.
 
-The API exposes **rolling windows**, not calendar dates. “Day” means the last 24 hours, including the menu bar and budget checks. Week means 7 days; Month means 30 days.
+Choose **Settings → Stats period**:
+
+- **Rolling** (default): Day / Week / Month mean the last 24 hours / 7 days / 30 days.
+- **Calendar**: Today / This week / This month use the Console API’s to-date presets, with UTC boundaries and Monday-start weeks.
+
+The menu-bar cost and daily budget alerts follow the same mode. Switching modes refreshes immediately; the choice persists across launches. Calendar baselines reset at the next minute poll or wake after midnight.
 
 ## Authentication
 
@@ -43,9 +48,9 @@ Switch accounts with `edgee auth switch`, then refresh. New agent keys are confi
 
 ## Watchdog behavior
 
-Default limits are $20 and 10 million tokens per trailing 24 hours, with budget warnings beginning at 80%. All values are editable in the Watchdog tab. A budget of zero disables that budget.
+Default limits are $20 and 10 million tokens per selected daily window, with budget warnings beginning at 80%. All values are editable in the Watchdog tab. A budget of zero disables that budget.
 
-In **Watchdog → Model Roles**, the app suggests Thinking for Opus, GPT Sol, Kimi K3, GLM 5.3, and Deepseek v4.1; Executor for Sonnet, GPT Terra/Luna, the Qwen family, and Kimi 2.5. Suggestions recognize provider prefixes, versions, and common punctuation. These are workflow preferences, not capability ratings. **Apply suggested roles** accepts suggestions for models seen in the trailing 24 hours without overwriting manual roles. You can also choose a role individually or return it to Automatic.
+In **Watchdog → Model Roles**, the app suggests Thinking for Opus, GPT Sol, Kimi K3, GLM 5.3, and Deepseek v4.1; Executor for Sonnet, GPT Terra/Luna, the Qwen family, and Kimi 2.5. Suggestions recognize provider prefixes, versions, and common punctuation. These are workflow preferences, not capability ratings. **Apply suggested roles** accepts suggestions for models seen in the selected daily window without overwriting manual roles. You can also choose a role individually or return it to Automatic.
 
 Automatic classifications are estimates; thinking-to-executor advice requires accepted suggestions or manual assignments. Each model has one role, so assigning Thinking excludes it from Frontier share checks. All models still count toward budget limits. Session spike detection needs two fresh observations for the same session, ignores cost resets, and requires a meaningful increase before alerting.
 
@@ -67,6 +72,7 @@ Xcode can open the Swift package directly. `make build` creates the locally sign
 scripts/run.sh --debug --demo --window
 scripts/run.sh --debug --demo --window --agents
 scripts/run.sh --debug --demo --window --watchdog
+scripts/run.sh --debug --demo --window --calendar
 ```
 
 The app can render its actual native view for visual checks:

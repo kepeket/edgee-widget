@@ -30,12 +30,12 @@ public struct WatchdogModelClassification: Codable, Sendable, Equatable {
 
 /// User-editable limits used by `WatchdogEngine`.
 public struct WatchdogSettings: Codable, Sendable, Equatable {
-    /// Spend allowed in the API's trailing 24-hour window, in USD.
+    /// Spend allowed in the selected daily usage window, in USD.
     public var dailySpendLimit: Double
     public var dailyTokenLimit: Double
-    /// The fraction of a trailing-24-hour limit at which a budget warning begins.
+    /// The fraction of the daily limit at which a budget warning begins.
     public var budgetWarningFraction: Double
-    /// The largest acceptable share of trailing-24-hour cost attributed to frontier models.
+    /// The largest acceptable share of daily cost attributed to frontier models.
     public var maximumFrontierCostShare: Double
     /// The largest acceptable thinking-cost / executor-cost ratio.
     public var maximumThinkingToExecutorCostRatio: Double
@@ -81,7 +81,7 @@ public struct WatchdogSettings: Codable, Sendable, Equatable {
     }
 }
 
-/// A persisted trailing-24-hour snapshot that can become the baseline for the next fetch.
+/// A persisted snapshot that can become the baseline for the next fetch.
 public struct WatchdogObservation: Codable, Sendable, Equatable {
     public var snapshot: UsageSnapshot
     public var timestamp: Date
@@ -209,12 +209,14 @@ public enum WatchdogEngine: Sendable {
         alerts: inout [WatchdogAlert]
     ) {
         let recommendation = cheaperExecutorRecommendation(snapshot: snapshot, settings: settings)
+        let isCalendarWindow = snapshot.effectiveWindow.mode == .calendar
         appendBudgetAlert(
             value: snapshot.totalCost,
             limit: settings.dailySpendLimit,
             warningFraction: settings.budgetWarningFraction,
             id: "daily-spend",
-            title: "Trailing 24-hour spend is high",
+            title: snapshot.effectiveWindow.mode == .calendar ? "Today's spend is high" : "Trailing 24-hour spend is high",
+            isCalendarWindow: isCalendarWindow,
             unit: "$",
             kind: .dailySpend,
             recommendation: recommendation,
@@ -225,7 +227,8 @@ public enum WatchdogEngine: Sendable {
             limit: settings.dailyTokenLimit,
             warningFraction: settings.budgetWarningFraction,
             id: "daily-tokens",
-            title: "Trailing 24-hour token use is high",
+            title: snapshot.effectiveWindow.mode == .calendar ? "Today's token use is high" : "Trailing 24-hour token use is high",
+            isCalendarWindow: isCalendarWindow,
             unit: "tokens",
             kind: .dailyTokens,
             recommendation: recommendation,
@@ -239,6 +242,7 @@ public enum WatchdogEngine: Sendable {
         warningFraction: Double,
         id: String,
         title: String,
+        isCalendarWindow: Bool,
         unit: String,
         kind: WatchdogAlertKind,
         recommendation: String,
@@ -259,7 +263,9 @@ public enum WatchdogEngine: Sendable {
             id: id,
             severity: severity,
             title: title,
-            message: "\(renderedValue) of \(renderedLimit) trailing 24-hour \(unit == "$" ? "spend" : "tokens") used.",
+            message: isCalendarWindow
+                ? "Today: \(renderedValue) of \(renderedLimit) \(unit == "$" ? "spend" : "tokens") used."
+                : "\(renderedValue) of \(renderedLimit) trailing 24-hour \(unit == "$" ? "spend" : "tokens") used.",
             kind: kind,
             recommendation: recommendation
         ))
@@ -287,8 +293,8 @@ public enum WatchdogEngine: Sendable {
                 alerts.append(WatchdogAlert(
                     id: "frontier-share",
                     severity: share >= min(1, settings.maximumFrontierCostShare * 1.25) ? .critical : .warning,
-                    title: "Frontier-model spend is high",
-                    message: "\(percentage(share)) of trailing 24-hour spend is on frontier models; the configured maximum is \(percentage(settings.maximumFrontierCostShare)).\(heuristicNote)",
+                    title: snapshot.effectiveWindow.mode == .calendar ? "Today's frontier-model spend is high" : "Frontier-model spend is high",
+                    message: "\(percentage(share)) of \(snapshot.effectiveWindow.mode == .calendar ? "today's" : "trailing 24-hour") spend is on frontier models; the configured maximum is \(percentage(settings.maximumFrontierCostShare)).\(heuristicNote)",
                     kind: .frontierShare,
                     recommendation: cheaperExecutorRecommendation(snapshot: snapshot, settings: settings)
                 ))
@@ -329,7 +335,7 @@ public enum WatchdogEngine: Sendable {
         alerts: inout [WatchdogAlert]
     ) {
         guard let previous,
-              previous.snapshot.period == .day,
+              snapshot.effectiveWindow.canCompare(with: previous.snapshot.effectiveWindow),
               snapshot.scope == previous.snapshot.scope,
               snapshot.fetchedAt > previous.snapshot.fetchedAt,
               snapshot.fetchedAt > previous.timestamp,
@@ -340,6 +346,9 @@ public enum WatchdogEngine: Sendable {
               settings.maximumObservationAge.isFinite,
               settings.maximumObservationAge > 0 else { return }
 
+        // Window comparability is checked before elapsed time: calendar snapshots
+        // must share their UTC boundary, while rolling windows remain comparable
+        // across UTC midnight.
         let elapsed = snapshot.fetchedAt.timeIntervalSince(previous.timestamp)
         guard elapsed.isFinite, elapsed > 0, elapsed <= settings.maximumObservationAge else { return }
         let previousSessions = Dictionary(grouping: previous.snapshot.sessions, by: \.id)

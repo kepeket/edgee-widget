@@ -61,26 +61,23 @@ public actor EdgeeService: EdgeeServing {
         return try Self.parseIdentity(data)
     }
 
-    public func usage(for period: UsagePeriod) async throws -> UsageSnapshot {
+    public func usage(for period: UsagePeriod, mode: UsageWindowMode = .rolling) async throws -> UsageSnapshot {
         let credentials = try await readCredentials()
         guard let userID = credentials.userID, !userID.isEmpty else {
             throw EdgeeServiceError.missingMemberScope
         }
 
-        let body: [String: Any] = [
-            "period": period.cliValue,
-            "user_id": [userID],
-            "interval": period == .day ? "hour" : "day"
-        ]
+        let window = UsageWindow(period: period, mode: mode)
+        let body = Self.usageRequestBody(window: window, userID: userID)
         let data = try await apiRequest(
             credentials: credentials,
             pathComponents: ["v1", "organizations", credentials.organizationID, "usage"],
             method: "POST",
             body: body
         )
-        var snapshot = try Self.parseUsage(data, period: period)
+        var snapshot = try Self.parseUsage(data, period: period, window: window)
         do {
-            snapshot.sessions = try await sessions(for: period, credentials: credentials, userID: userID)
+            snapshot.sessions = try await sessions(window: window, credentials: credentials, userID: userID)
         } catch is CancellationError {
             throw CancellationError()
         } catch {
@@ -234,10 +231,15 @@ public actor EdgeeService: EdgeeServing {
         )
     }
 
+    static func usageRequestBody(window: UsageWindow, userID: String) -> [String: Any] {
+        ["period": window.apiValue, "user_id": [userID], "interval": window.interval]
+    }
+
     public static func parseUsage(
         _ data: Data,
         period: UsagePeriod,
-        sessions: [SessionUsage] = []
+        sessions: [SessionUsage] = [],
+        window: UsageWindow? = nil
     ) throws -> UsageSnapshot {
         let response: UsageResponse
         do { response = try JSONDecoder().decode(UsageResponse.self, from: data) }
@@ -304,7 +306,8 @@ public actor EdgeeService: EdgeeServing {
             sessions: sessions,
             fetchedAt: Date(),
             scope: "Your usage",
-            notice: notice
+            notice: notice,
+            window: window
         )
     }
 
@@ -420,7 +423,7 @@ public actor EdgeeService: EdgeeServing {
     // MARK: - Console API
 
     private func sessions(
-        for period: UsagePeriod,
+        window: UsageWindow,
         credentials: Credentials,
         userID: String
     ) async throws -> [SessionUsage] {
@@ -432,8 +435,8 @@ public actor EdgeeService: EdgeeServing {
         }
         guard !agentNamesByKeyID.isEmpty else { return [] }
 
-        let through = Date()
-        let since = through.addingTimeInterval(-period.duration)
+        let through = window.end
+        let since = window.start
         let formatter = ISO8601DateFormatter()
         formatter.formatOptions = [.withInternetDateTime]
         var page = 1
@@ -719,16 +722,6 @@ public actor EdgeeService: EdgeeServing {
             )
         }
         return ParsedSessionPage(sessions: sessions, hasMore: response.hasMore)
-    }
-}
-
-private extension UsagePeriod {
-    var duration: TimeInterval {
-        switch self {
-        case .day: return 24 * 60 * 60
-        case .week: return 7 * 24 * 60 * 60
-        case .month: return 30 * 24 * 60 * 60
-        }
     }
 }
 

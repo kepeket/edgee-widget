@@ -43,9 +43,9 @@ This builds the app with hardened runtime and a secure signing timestamp, submit
 
 ```sh
 codesign --verify --deep --strict build/universal/Edgee.app
-pkgutil --check-signature dist/jamf-0.1.8/Edgee-Pulse-0.1.8-universal.pkg
-spctl --assess --type install --verbose=2 dist/jamf-0.1.8/Edgee-Pulse-0.1.8-universal.pkg
-(cd dist && shasum -a 256 -c SHA256SUMS)
+pkgutil --check-signature dist/jamf-0.1.9/Edgee-Pulse-0.1.9-universal.pkg
+spctl --assess --type install --verbose=2 dist/jamf-0.1.9/Edgee-Pulse-0.1.9-universal.pkg
+(cd dist/jamf-0.1.9 && shasum -a 256 -c SHA256SUMS)
 ```
 
 For signing without submission to Apple, run the build and `scripts/package-app.sh` separately; those artifacts carry a `-signed-unnotarized` suffix. The script refuses to overwrite existing artifacts; use a fresh `--output-dir` when rerunning packaging.
@@ -69,8 +69,8 @@ CI builds these review artifacts, runs tests, and verifies the package payload w
 Reference: [Jamf — Deploying a package using a policy](https://learn.jamf.com/r/en-US/jamf-pro-documentation-current/Deploying_a_Package_Using_a_Policy).
 
 1. Use the signed, notarized `.pkg` and verify its SHA-256 checksum against the release's `SHA256SUMS`.
-2. Upload it to your Jamf distribution point through the Packages settings.
-3. Create a policy to install the package. Start with a small pilot group containing an Apple Silicon Mac and an Intel Mac, both on supported macOS versions. Scope production policies to macOS 14+.
+2. For Qonto upgrades, replace the uploaded file in the existing [Edgee Pulse package 106](https://qonto.jamfcloud.com/view/settings/computer-management/packages/106?tab=general), retaining its stable display name and package ID so existing policy references stay valid. Verify the uploaded filename, size, checksum, and availability.
+3. Reuse the existing installation policy for upgrades; create a policy only for an initial rollout. Replacing a package does not itself rerun a policy that has already completed its configured frequency. Start with a small pilot group containing an Apple Silicon Mac and an Intel Mac, both on supported macOS versions. Scope production policies to macOS 14+.
 4. For the pilot, make the policy available in Self Service so employees can quit existing copies before updating. An automated rollout can use your normal check-in trigger after the pilot succeeds.
 5. Have employees launch `/Applications/Edgee Pulse.app`, connect their own Edgee profile, and optionally enable **Launch at login**. Do not launch the app from a root installer script.
 6. Confirm the menu-bar cost refreshes, agent settings load, the side routing preview is read-only, and no extra standalone window opens. Check both architectures on real devices; a universal build alone is not an Intel runtime test.

@@ -30,7 +30,7 @@ struct WatchdogView: View {
             }
             Card {
                 VStack(alignment: .leading, spacing: 15) {
-                    SectionCaption(title: "YOUR GUARDRAILS", trailing: "TRAILING 24H")
+                    SectionCaption(title: "YOUR GUARDRAILS", trailing: store.windowMode == .calendar ? "TODAY · UTC" : "TRAILING 24H")
                     numberSetting("Spend budget", icon: "dollarsign.circle", value: $store.watchdogSettings.dailySpendLimit, suffix: "USD", range: 0...1_000_000)
                     numberSetting("Token budget", icon: "square.stack", value: Binding(get: { store.watchdogSettings.dailyTokenLimit / 1_000_000 }, set: { store.watchdogSettings.dailyTokenLimit = $0 * 1_000_000 }), suffix: "M tokens", range: 0...10_000)
                     numberSetting("Frontier cost share", icon: "sparkle", value: Binding(get: { store.watchdogSettings.maximumFrontierCostShare * 100 }, set: { store.watchdogSettings.maximumFrontierCostShare = $0 / 100 }), suffix: "% max", range: 0...100)

@@ -1,4 +1,5 @@
 import SwiftUI
+import EdgeeCore
 import AppKit
 import ServiceManagement
 
@@ -83,8 +84,14 @@ struct SettingsContent: View {
                         catch { loginError = error.localizedDescription }
                     })).font(.system(size: 11)).toggleStyle(.switch).controlSize(.small).tint(Theme.mint)
                     if let loginError { Text(loginError).font(.system(size: 10)).foregroundStyle(Theme.amber) }
+                    Picker("Stats period", selection: Binding(get: { store.windowMode }, set: store.setWindowMode)) {
+                        ForEach(UsageWindowMode.allCases, id: \.self) { mode in
+                            Text(mode.title).tag(mode)
+                        }
+                    }.pickerStyle(.segmented).font(.system(size: 11))
+                    Text("Rolling shows the last 24 hours, 7 days, or 30 days. Calendar shows today, this week, or this month to date, using Edgee’s UTC calendar and Monday-start weeks.").font(.system(size: 11)).foregroundStyle(Theme.muted).lineSpacing(3)
+                    Text("The menu bar and budgets always use the selected mode’s daily period.").font(.system(size: 11)).foregroundStyle(Theme.muted).lineSpacing(3)
                     Text("Refreshes every 60 seconds. Runs locally in your menu bar; closing the panel keeps monitoring active.").font(.system(size: 11)).foregroundStyle(Theme.muted).lineSpacing(3)
-                    Text("Day, Week, and Month represent the API’s trailing 24-hour, 7-day, and 30-day windows. The menu bar always shows your trailing 24-hour spend.").font(.system(size: 11)).foregroundStyle(Theme.muted).lineSpacing(3)
                 }
             }
             Card {

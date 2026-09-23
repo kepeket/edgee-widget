@@ -23,6 +23,7 @@ import UserNotifications
     func applicationDidFinishLaunching(_ notification: Notification) {
         let args = ProcessInfo.processInfo.arguments
         store = AppStore(demo: args.contains("--demo"))
+        if args.contains("--demo"), args.contains("--calendar") { store.setWindowMode(.calendar) }
         if args.contains("--agents") { store.selectedTab = .agents }
         if args.contains("--watchdog") { store.selectedTab = .watchdog }
         if args.contains("--settings") { store.showSettings = true }

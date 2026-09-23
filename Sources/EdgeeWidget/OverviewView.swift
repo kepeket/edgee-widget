@@ -22,18 +22,35 @@ struct OverviewView: View {
         }
     }
     private var periodPicker: some View {
-        HStack {
+        HStack(spacing: 8) {
             HStack(spacing: 3) {
                 ForEach(UsagePeriod.allCases, id: \.self) { period in
                     Button { store.selectPeriod(period) } label: {
-                        Text(period.title).font(.system(size: 11, weight: .semibold)).foregroundStyle(store.period == period ? Theme.text : Theme.muted)
-                            .frame(width: 53, height: 28).background(store.period == period ? Theme.elevated : .clear, in: RoundedRectangle(cornerRadius: 7))
+                        Text(period.title(in: store.windowMode))
+                            .font(.system(size: 11, weight: .semibold))
+                            .lineLimit(1)
+                            .fixedSize(horizontal: true, vertical: false)
+                            .foregroundStyle(store.period == period ? Theme.text : Theme.muted)
+                            .frame(minWidth: 53, minHeight: 28)
+                            .padding(.horizontal, 7)
+                            .background(store.period == period ? Theme.elevated : .clear, in: RoundedRectangle(cornerRadius: 7))
                     }.buttonStyle(.plain).accessibilityAddTraits(store.period == period ? .isSelected : [])
                 }
             }.padding(3).background(Theme.card, in: RoundedRectangle(cornerRadius: 10))
-            Spacer()
-            Text(store.period.windowLabel).font(.system(size: 10, design: .monospaced)).foregroundStyle(Theme.muted)
+            Spacer(minLength: 0)
+            Text(store.period.windowLabel(in: store.windowMode))
+                .font(.system(size: 10, design: .monospaced))
+                .lineLimit(1)
+                .minimumScaleFactor(0.85)
+                .foregroundStyle(Theme.muted)
         }
+    }
+    private var chartDateFormat: Date.FormatStyle {
+        var format: Date.FormatStyle = store.period == .day
+            ? .dateTime.hour().minute()
+            : .dateTime.month(.abbreviated).day()
+        format.timeZone = store.windowMode == .calendar ? UsageWindow.consoleTimeZone : .current
+        return format
     }
     private func spendCard(_ usage: UsageSnapshot) -> some View {
         Card {
@@ -51,7 +68,7 @@ struct OverviewView: View {
                 }
                 if !usage.series.isEmpty {
                     SpendChart(points: usage.series)
-                    HStack { Text(usage.series.first?.date ?? Date(), format: store.period == .day ? .dateTime.hour().minute() : .dateTime.month(.abbreviated).day()); Spacer(); Text("NOW") }.font(.system(size: 9, design: .monospaced)).foregroundStyle(Theme.muted)
+                    HStack { Text(usage.series.first?.date ?? Date(), format: chartDateFormat); Spacer(); Text("NOW") }.font(.system(size: 9, design: .monospaced)).foregroundStyle(Theme.muted)
                 } else {
                     Text("Time series unavailable for this account").font(.system(size: 10)).foregroundStyle(Theme.muted).frame(height: 38)
                 }
@@ -68,7 +85,7 @@ struct OverviewView: View {
                         GeometryReader { g in
                             ZStack(alignment: .leading) { Capsule().fill(Theme.elevated); Capsule().fill(usage.totalCost >= store.watchdogSettings.dailySpendLimit ? Theme.amber : Theme.mint.opacity(0.75)).frame(width: min(1, max(0, usage.totalCost / store.watchdogSettings.dailySpendLimit)) * g.size.width) }
                         }.frame(height: 3)
-                        HStack { Text("24-hour budget"); Spacer(); Text("\(Display.money(usage.totalCost)) / \(Display.money(store.watchdogSettings.dailySpendLimit))") }.font(.system(size: 9, design: .monospaced)).foregroundStyle(Theme.muted)
+                        HStack { Text(store.windowMode == .calendar ? "Today’s budget" : "24-hour budget"); Spacer(); Text("\(Display.money(usage.totalCost)) / \(Display.money(store.watchdogSettings.dailySpendLimit))") }.font(.system(size: 9, design: .monospaced)).foregroundStyle(Theme.muted)
                     }.padding(.top, 2)
                 }
             }
