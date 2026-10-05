@@ -12,12 +12,17 @@ struct PanelView: View {
             if let error = store.errorMessage {
                 HStack(alignment: .top, spacing: 7) { Image(systemName: "exclamationmark.circle"); Text(error).lineLimit(4).textSelection(.enabled); Spacer(minLength: 0); Button { store.errorMessage = nil } label: { Image(systemName: "xmark").font(.system(size: 8)) }.buttonStyle(.plain) }.font(.system(size: 10)).foregroundStyle(Theme.amber).padding(12).background(Theme.amber.opacity(0.07)).padding(.horizontal, 20).padding(.bottom, 10)
             }
-            ScrollView {
-                VStack(spacing: 14) {
-                    if store.showSettings { SettingsContent() }
-                    else { switch store.selectedTab { case .overview: OverviewView(); case .agents: AgentsView(); case .watchdog: WatchdogView() } }
-                }.padding(.horizontal, 20).padding(.top, 2).padding(.bottom, 20)
-            }.scrollIndicators(.hidden)
+            ScrollViewReader { proxy in
+                ScrollView {
+                    VStack(spacing: 14) {
+                        if store.showSettings { SettingsContent() }
+                        else { switch store.selectedTab { case .overview: OverviewView(); case .agents: AgentsView(); case .watchdog: WatchdogView() } }
+                    }.padding(.horizontal, 20).padding(.top, 2).padding(.bottom, 20)
+                }.scrollIndicators(.hidden)
+                .onChange(of: store.watchdogNavigationRequest) { _, _ in
+                    DispatchQueue.main.async { proxy.scrollTo("watchdog-top", anchor: .top) }
+                }
+            }
             footer
         }
         .frame(width: 456, height: 760)

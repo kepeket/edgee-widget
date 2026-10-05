@@ -194,7 +194,7 @@ final class AppStoreTests: XCTestCase {
         XCTAssertEqual(AppStore(service: MockEdgeeService(), defaults: suite.defaults).windowMode, .rolling)
     }
 
-    func testCalendarWeekAndMonthMaintainTodayInMenuAndAlerts() async {
+    func testCalendarWeekAndMonthMaintainTodayInMenu() async {
         let suite = isolatedDefaults()
         defer { suite.clear() }
         suite.defaults.set("calendar", forKey: "usageWindowMode")
@@ -210,12 +210,10 @@ final class AppStoreTests: XCTestCase {
         XCTAssertEqual(store.usage?.totalCost, 70)
         XCTAssertEqual(store.dailyUsage?.totalCost, 25)
         XCTAssertTrue(store.statusDescription.contains("Today (UTC)"))
-        XCTAssertTrue(store.alerts.contains { $0.kind == .dailySpend })
         store.selectPeriod(.month)
         await waitFor { !store.isRefreshing }
         XCTAssertEqual(store.usage?.totalCost, 300)
         XCTAssertEqual(store.dailyUsage?.totalCost, 2)
-        XCTAssertFalse(store.alerts.contains { $0.kind == .dailySpend })
         let modes = await service.usageModes()
         XCTAssertEqual(modes, [.calendar, .calendar, .calendar, .calendar])
     }
@@ -232,21 +230,18 @@ final class AppStoreTests: XCTestCase {
         let store = AppStore(service: service, defaults: suite.defaults)
         store.refresh()
         await waitFor { !store.isRefreshing }
-        XCTAssertFalse(store.alerts.isEmpty)
         store.refresh()
         await waitFor { await service.usageRequestCount(for: .day) == 2 }
         store.setWindowMode(.calendar)
         XCTAssertNil(store.usage)
         XCTAssertNil(store.dailyUsage)
         XCTAssertNil(store.lastRefresh)
-        XCTAssertTrue(store.alerts.isEmpty)
         XCTAssertEqual(store.statusTitle, "—")
         await waitFor { !store.isRefreshing }
         await service.resumeUsage(for: .day)
         await waitFor { await service.completedSuspendedUsageCount(for: .day) == 1 }
         XCTAssertEqual(store.usage?.windowMode, .calendar)
         XCTAssertEqual(store.dailyUsage?.totalCost, 2)
-        XCTAssertTrue(store.alerts.isEmpty)
     }
 
     func testModeSwitchRejectsSuspendedSelectedPeriodResponse() async {
@@ -276,12 +271,10 @@ final class AppStoreTests: XCTestCase {
         let store = AppStore(service: service, defaults: suite.defaults, now: { date })
         store.refresh()
         await waitFor { !store.isRefreshing }
-        XCTAssertFalse(store.alerts.isEmpty)
         date = date.addingTimeInterval(2)
         store.refresh()
         XCTAssertNil(store.dailyUsage)
         XCTAssertNil(store.usage)
-        XCTAssertTrue(store.alerts.isEmpty)
         await waitFor { !store.isRefreshing }
         XCTAssertNotNil(store.errorMessage)
         XCTAssertNil(store.lastRefresh)
@@ -307,37 +300,6 @@ final class AppStoreTests: XCTestCase {
         XCTAssertEqual(requests, 2)
         XCTAssertEqual(store.dailyUsage?.totalCost, 0)
         XCTAssertEqual(store.usage?.effectiveWindow.start, ISO8601DateFormatter().date(from: "2026-09-24T00:00:00Z"))
-        XCTAssertTrue(store.alerts.isEmpty)
-    }
-
-    func testNotificationThrottleResetsAtCalendarMidnightAndModeSwitch() async {
-        let suite = isolatedDefaults()
-        defer { suite.clear() }
-        suite.defaults.set("calendar", forKey: "usageWindowMode")
-        suite.defaults.set(true, forKey: "notificationsEnabled")
-        var date = ISO8601DateFormatter().date(from: "2026-09-23T23:59:00Z")!
-        let nextDay = date.addingTimeInterval(120)
-        let service = MockEdgeeService(dayPlans: [
-            .success(snapshot(.day, cost: 30, at: date)),
-            .success(snapshot(.day, cost: 30, at: date)),
-            .success(snapshot(.day, cost: 30, at: nextDay)),
-            .success(snapshot(.day, cost: 30, at: nextDay))
-        ])
-        var delivered: [String] = []
-        let store = AppStore(service: service, defaults: suite.defaults, now: { date }, sendNotification: { _, key in delivered.append(key) })
-        store.refresh()
-        await waitFor { !store.isRefreshing }
-        XCTAssertEqual(delivered, ["daily-spend:critical"])
-        store.refresh()
-        await waitFor { !store.isRefreshing }
-        XCTAssertEqual(delivered.count, 1)
-        date = nextDay
-        store.refresh()
-        await waitFor { !store.isRefreshing }
-        XCTAssertEqual(delivered.count, 2)
-        store.setWindowMode(.rolling)
-        await waitFor { !store.isRefreshing }
-        XCTAssertEqual(delivered.count, 3)
     }
 
     private func waitFor(

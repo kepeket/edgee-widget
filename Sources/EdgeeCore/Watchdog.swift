@@ -98,6 +98,9 @@ public enum WatchdogAlertSeverity: String, Codable, Sendable, Equatable {
 }
 
 public enum WatchdogAlertKind: String, Codable, Sendable, Equatable {
+    case thinkingTokens
+    case monthlySpend
+    case rapidSpend
     case dailySpend
     case dailyTokens
     case frontierShare

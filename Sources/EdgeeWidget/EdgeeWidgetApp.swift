@@ -28,6 +28,7 @@ import UserNotifications
         if args.contains("--watchdog") { store.selectedTab = .watchdog }
         if args.contains("--settings") { store.showSettings = true }
         UNUserNotificationCenter.current().delegate = self
+        WatchdogNotifications.registerCategories()
         configureMenu()
         configureStatusItem()
         popover.contentSize = NSSize(width: 456, height: 760)
@@ -126,9 +127,20 @@ import UserNotifications
         catch { fputs("Snapshot could not be saved.\n", stderr) }
         if ProcessInfo.processInfo.arguments.contains("--exit-after-snapshot") { NSApp.terminate(nil) }
     }
+    func applicationDidBecomeActive(_ notification: Notification) {
+        guard let store else { return }
+        Task { await store.watchdog.notifications.refreshStatus() }
+        store.watchdog.refresh()
+    }
     func applicationWillTerminate(_ notification: Notification) { store.stop(); if let keyMonitor { NSEvent.removeMonitor(keyMonitor) } }
-    nonisolated func userNotificationCenter(_ center: UNUserNotificationCenter, willPresent notification: UNNotification) async -> UNNotificationPresentationOptions { [.banner, .sound] }
+    nonisolated func userNotificationCenter(_ center: UNUserNotificationCenter, willPresent notification: UNNotification) async -> UNNotificationPresentationOptions { [.banner, .list, .sound] }
     nonisolated func userNotificationCenter(_ center: UNUserNotificationCenter, didReceive response: UNNotificationResponse) async {
-        await MainActor.run { self.store.selectedTab = .watchdog; self.showPopover() }
+        guard response.actionIdentifier != UNNotificationDismissActionIdentifier else { return }
+        let action = response.actionIdentifier
+        let alertID = response.notification.request.content.userInfo["watchdogAlertID"] as? String
+        await MainActor.run {
+            self.store.openWatchdog(alertID: alertID, reviewRouting: action == WatchdogNotifications.routingAction)
+            self.showPopover()
+        }
     }
 }
