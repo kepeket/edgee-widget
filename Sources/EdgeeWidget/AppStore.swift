@@ -1,7 +1,6 @@
 import AppKit
 import Foundation
 import SwiftUI
-import UserNotifications
 import EdgeeCore
 
 @MainActor final class AppStore: ObservableObject {
@@ -22,10 +21,11 @@ import EdgeeCore
     @Published var lastRefresh: Date?
     @Published var alerts: [WatchdogAlert] = []
     @Published var watchdogSettings: WatchdogSettings {
-        didSet { if !isDemo { persistSettings() }; reevaluateWatchdog() }
+        didSet { if !isDemo { persistSettings() } }
     }
-    @Published var notificationsEnabled: Bool
+    let watchdog: WatchdogMonitor
     @Published var selectedTab: PanelTab = .overview
+    @Published private(set) var watchdogNavigationRequest = 0
     @Published var showSettings = false
     @Published var pinned = false
     var onStatusChange: (() -> Void)?
@@ -33,31 +33,23 @@ import EdgeeCore
     private let defaults: UserDefaults
     private let service: any EdgeeServing
     private let now: () -> Date
-    private let sendNotification: (WatchdogAlert, String) async throws -> Void
     private var pollTask: Task<Void, Never>?
     private var refreshTask: Task<Void, Never>?
-    private var previousObservation: WatchdogObservation?
-    private var deliveredAlerts: [String: Date] = [:]
     private var generation = 0
     private var refreshWindow: UsageWindow?
     private var wakeObserver: NSObjectProtocol?
     private var clockObserver: NSObjectProtocol?
     private var timeZoneObserver: NSObjectProtocol?
 
-    init(service: any EdgeeServing = EdgeeService(), demo: Bool = false, defaults: UserDefaults = .standard, now: @escaping () -> Date = Date.init,
-         sendNotification: ((WatchdogAlert, String) async throws -> Void)? = nil) {
+    init(service: any EdgeeServing = EdgeeService(), demo: Bool = false, defaults: UserDefaults = .standard, now: @escaping () -> Date = Date.init) {
         self.service = service
         self.defaults = defaults
         self.now = now
-        self.sendNotification = sendNotification ?? { alert, key in
-            let content = UNMutableNotificationContent()
-            content.title = "Edgee · \(alert.title)"; content.body = alert.message; content.sound = .default
-            try await UNUserNotificationCenter.current().add(UNNotificationRequest(identifier: key, content: content, trigger: nil))
-        }
+        self.watchdog = WatchdogMonitor(service: service, defaults: defaults, now: now)
         self.windowMode = UsageWindowMode(rawValue: defaults.string(forKey: "usageWindowMode") ?? "") ?? .rolling
-        self.notificationsEnabled = defaults.bool(forKey: "notificationsEnabled")
         if let data = defaults.data(forKey: "watchdogSettings"), let value = try? JSONDecoder().decode(WatchdogSettings.self, from: data) { watchdogSettings = value }
         else { watchdogSettings = WatchdogSettings() }
+        watchdog.onAlertsChange = { [weak self] alerts in self?.alerts = alerts }
         if demo { enterDemo() }
     }
     var statusTitle: String {
@@ -71,6 +63,7 @@ import EdgeeCore
     }
     func start() {
         guard pollTask == nil else { return }
+        watchdog.start()
         if !isDemo { refresh() }
         wakeObserver = NSWorkspace.shared.notificationCenter.addObserver(forName: NSWorkspace.didWakeNotification, object: nil, queue: .main) { [weak self] _ in
             Task { @MainActor in self?.refresh(force: true) }
@@ -90,6 +83,7 @@ import EdgeeCore
         }
     }
     func stop() {
+        watchdog.stop()
         pollTask?.cancel(); pollTask = nil
         refreshTask?.cancel(); refreshTask = nil
         generation += 1; isRefreshing = false
@@ -103,18 +97,17 @@ import EdgeeCore
         windowMode = next
         if !isDemo { defaults.set(next.rawValue, forKey: "usageWindowMode") }
         usage = nil; dailyUsage = nil; lastRefresh = nil; errorMessage = nil
-        previousObservation = nil; deliveredAlerts = [:]; alerts = []
         onStatusChange?()
         refresh(force: true)
     }
 
     /// Clear expired calendar totals even when the next network request fails.
-    /// This also resets notification throttles and session baselines at UTC midnight.
+    /// Watchdog calendar windows are monitored independently.
     private func invalidateCalendarUsage(at date: Date) -> Bool {
         let dailyExpired = dailyUsage.map { !$0.effectiveWindow.isCurrent(at: date) } ?? false
         let requestExpired = refreshWindow.map { !$0.isCurrent(at: date) } ?? false
         if dailyExpired || requestExpired {
-            dailyUsage = nil; previousObservation = nil; alerts = []; deliveredAlerts = [:]
+            dailyUsage = nil
             lastRefresh = nil
         }
         if let usage, !usage.effectiveWindow.isCurrent(at: date) { self.usage = nil; lastRefresh = nil }
@@ -138,7 +131,8 @@ import EdgeeCore
         refresh(force: true)
     }
     func refresh(force: Bool = false) {
-        if isDemo { usage = DemoData.usage(period, mode: windowMode, now: now()); dailyUsage = DemoData.usage(.day, mode: windowMode, now: now()); lastRefresh = now(); reevaluateWatchdog(); onStatusChange?(); return }
+        if pollTask != nil && force { watchdog.refresh() }
+        if isDemo { usage = DemoData.usage(period, mode: windowMode, now: now()); dailyUsage = DemoData.usage(.day, mode: windowMode, now: now()); lastRefresh = now(); onStatusChange?(); return }
         let startedAt = now()
         let expired = invalidateCalendarUsage(at: startedAt)
         if isRefreshing && !force && !expired { return }
@@ -157,25 +151,17 @@ import EdgeeCore
                 guard self.acceptRefresh(ticket, startedAt: startedAt) else { return }
                 if let old = self.identity, old != account {
                     self.usage = nil; self.dailyUsage = nil; self.agents = []; self.modelsByAgent = [:]; self.modelErrors = [:]
-                    self.previousObservation = nil; self.deliveredAlerts = [:]; self.alerts = []
                 }
                 self.identity = account
                 let daily = try await self.service.usage(for: .day, mode: requestedMode)
                 guard self.acceptRefresh(ticket, startedAt: startedAt) else { return }
-                if let previous = self.previousObservation,
-                   !daily.effectiveWindow.canCompare(with: previous.snapshot.effectiveWindow) {
-                    self.previousObservation = nil; self.deliveredAlerts = [:]
-                }
                 self.dailyUsage = daily
-                self.alerts = WatchdogEngine.evaluate(snapshot: daily, previous: self.previousObservation, settings: self.watchdogSettings)
-                self.previousObservation = WatchdogObservation(snapshot: daily)
                 self.onStatusChange?()
                 let selected = requestedPeriod == .day ? daily : try await self.service.usage(for: requestedPeriod, mode: requestedMode)
                 guard self.acceptRefresh(ticket, startedAt: startedAt) else { return }
                 self.usage = selected
                 self.lastRefresh = self.now()
                 self.errorMessage = nil
-                await self.deliverNotifications(ticket: ticket, startedAt: startedAt)
                 guard self.acceptRefresh(ticket, startedAt: startedAt) else { return }
                 do {
                     let agents = try await self.service.agents()
@@ -193,19 +179,19 @@ import EdgeeCore
     }
     func enterDemo() {
         refreshTask?.cancel(); generation += 1; isRefreshing = false
-        isDemo = true; errorMessage = nil; refreshWindow = nil; deliveredAlerts = [:]
+        isDemo = true; watchdog.setDemo(true); errorMessage = nil; refreshWindow = nil
         identity = EdgeeIdentity(name: "Developer", organization: "Demo workspace")
         agents = DemoData.agents; usage = DemoData.usage(period, mode: windowMode, now: now()); dailyUsage = DemoData.usage(.day, mode: windowMode, now: now())
-        lastRefresh = now(); modelsByAgent = [:]; modelErrors = [:]; previousObservation = nil
+        lastRefresh = now(); modelsByAgent = [:]; modelErrors = [:]
         var demoSettings = WatchdogSettings()
         demoSettings.modelRoleOverrides = ["anthropic/claude-opus-4.6": .frontier, "anthropic/claude-sonnet-4.6": .balanced, "openai/gpt-5-mini": .executor]
         watchdogSettings = demoSettings
-        reevaluateWatchdog(); onStatusChange?()
+        onStatusChange?()
     }
     func leaveDemo() {
-        generation += 1; isDemo = false; usage = nil; dailyUsage = nil; identity = nil; agents = []; alerts = []; modelsByAgent = [:]; modelErrors = [:]; previousObservation = nil
+        generation += 1; isDemo = false; watchdog.setDemo(false); usage = nil; dailyUsage = nil; identity = nil; agents = []; alerts = []; modelsByAgent = [:]; modelErrors = [:]
         windowMode = UsageWindowMode(rawValue: defaults.string(forKey: "usageWindowMode") ?? "") ?? .rolling
-        deliveredAlerts = [:]; lastRefresh = nil; refreshWindow = nil
+        lastRefresh = nil; refreshWindow = nil
         if let data = defaults.data(forKey: "watchdogSettings"), let value = try? JSONDecoder().decode(WatchdogSettings.self, from: data) { watchdogSettings = value }
         else { watchdogSettings = WatchdogSettings() }
         onStatusChange?(); refresh(force: true)
@@ -250,6 +236,13 @@ import EdgeeCore
     // Model switching is unavailable until the routing feature is ready.
     // Keep this guard at the store boundary so no UI can accidentally submit a route.
     func setRoute(_ id: String, model: String?) { }
+    func openWatchdog(alertID: String? = nil, reviewRouting: Bool = false) {
+        selectedTab = .watchdog
+        showSettings = false
+        watchdog.selectedAlertID = alertID
+        watchdog.showRouting = reviewRouting
+        watchdogNavigationRequest += 1
+    }
     private func mutateAgent(_ id: String, operation: @escaping () async throws -> Void) {
         guard !pendingAgents.contains(id) else { return }
         pendingAgents.insert(id); errorMessage = nil
@@ -267,37 +260,9 @@ import EdgeeCore
             }
         }
     }
-    func setNotifications(_ enabled: Bool) {
-        if !enabled { notificationsEnabled = false; defaults.set(false, forKey: "notificationsEnabled"); return }
-        Task {
-            do {
-                let allowed = try await UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound])
-                notificationsEnabled = allowed
-                defaults.set(allowed, forKey: "notificationsEnabled")
-                if !allowed { errorMessage = "Notifications are disabled in macOS System Settings → Notifications → Edgee." }
-            } catch { errorMessage = "Could not enable notifications: \(error.localizedDescription)" }
-        }
-    }
     func setPinned(_ value: Bool) { pinned = value; onPinChange?(value) }
     private func persistSettings() {
         if let data = try? JSONEncoder().encode(watchdogSettings) { defaults.set(data, forKey: "watchdogSettings") }
-    }
-    private func reevaluateWatchdog() {
-        guard let dailyUsage else { return }
-        alerts = WatchdogEngine.evaluate(snapshot: dailyUsage, previous: nil, settings: watchdogSettings)
-    }
-    private func deliverNotifications(ticket: Int, startedAt: Date) async {
-        guard notificationsEnabled, !isDemo else { return }
-        for alert in alerts {
-            guard acceptRefresh(ticket, startedAt: startedAt) else { return }
-            let key = alert.id + ":" + alert.severity.rawValue
-            guard now().timeIntervalSince(deliveredAlerts[key] ?? .distantPast) > 3600 else { continue }
-            do {
-                try await sendNotification(alert, key)
-                guard acceptRefresh(ticket, startedAt: startedAt) else { return }
-                deliveredAlerts[key] = now()
-            } catch { /* In-app advisories remain available if macOS delivery fails. */ }
-        }
     }
 }
 enum PanelTab: String, CaseIterable { case overview = "Overview", agents = "Agents", watchdog = "Watchdog" }

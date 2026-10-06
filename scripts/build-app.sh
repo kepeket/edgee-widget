@@ -16,6 +16,8 @@ Builds the EdgeeWidget Swift package into build/Edgee.app.
 Set EDGEE_BUNDLE_ID to choose the app identifier. Ad-hoc builds default to
 org.example.edgee-pulse; signed builds require an explicit non-placeholder ID.
 Set SIGN_IDENTITY to use a signing identity; the default is ad-hoc signing.
+Set EDGEE_TIME_SENSITIVE_PROFILE to a matching macOS provisioning profile with
+Time Sensitive Notifications enabled. Requires SIGN_IDENTITY (not ad-hoc).
 Set SWIFT_BUILD_FLAGS to append environment-specific SwiftPM flags.
 Set EDGEE_SWIFT_DISABLE_SANDBOX=1 to use a local SwiftPM/module cache in restricted environments.
 EOF
@@ -138,11 +140,34 @@ cp -- "${ROOT_DIR}/Resources/Info.plist" "${CONTENTS_DIR}/Info.plist"
 chmod 755 "${MACOS_DIR}/EdgeeWidget"
 
 SIGNING_IDENTITY="${SIGN_IDENTITY:--}"
+ENTITLEMENT_FLAGS=()
+if [[ -n "${EDGEE_TIME_SENSITIVE_PROFILE:-}" ]]; then
+    [[ "$SIGNING_IDENTITY" != "-" ]] || die "Time Sensitive notifications require a signing identity and matching provisioning profile"
+    [[ -f "$EDGEE_TIME_SENSITIVE_PROFILE" ]] || die "Time Sensitive provisioning profile not found"
+    PROFILE_PLIST="$(mktemp "${BUILD_DIR}/watchdog-profile.XXXXXX")"
+    trap 'rm -f -- "$PROFILE_PLIST"' EXIT
+    security cms -D -i "$EDGEE_TIME_SENSITIVE_PROFILE" -o "$PROFILE_PLIST" || die "Could not decode provisioning profile"
+    PROFILE_TIME_SENSITIVE="$(/usr/libexec/PlistBuddy -c 'Print :Entitlements:com.apple.developer.usernotifications.time-sensitive' "$PROFILE_PLIST" 2>/dev/null)" || die "Profile does not include Time Sensitive Notifications"
+    [[ "$PROFILE_TIME_SENSITIVE" == "true" ]] || die "Time Sensitive Notifications are not enabled in the profile"
+    PROFILE_APP_ID="$(/usr/libexec/PlistBuddy -c 'Print :Entitlements:com.apple.application-identifier' "$PROFILE_PLIST" 2>/dev/null)" || die "Profile is missing its macOS app identifier"
+    case "$PROFILE_APP_ID" in
+        *."$RESOLVED_BUNDLE_ID") ;;
+        *) die "Provisioning profile does not match EDGEE_BUNDLE_ID" ;;
+    esac
+    PROFILE_TEAM_ID="$(/usr/libexec/PlistBuddy -c 'Print :Entitlements:com.apple.developer.team-identifier' "$PROFILE_PLIST" 2>/dev/null)" || die "Profile is missing its team identifier"
+    SIGNING_ENTITLEMENTS="${BUILD_DIR}/Watchdog-signing.entitlements"
+    cp -- "${ROOT_DIR}/Resources/Watchdog.entitlements" "$SIGNING_ENTITLEMENTS"
+    /usr/libexec/PlistBuddy -c "Add :com.apple.application-identifier string ${PROFILE_APP_ID}" "$SIGNING_ENTITLEMENTS"
+    /usr/libexec/PlistBuddy -c "Add :com.apple.developer.team-identifier string ${PROFILE_TEAM_ID}" "$SIGNING_ENTITLEMENTS"
+    cp -- "$EDGEE_TIME_SENSITIVE_PROFILE" "${CONTENTS_DIR}/embedded.provisionprofile"
+    /usr/libexec/PlistBuddy -c 'Add :EdgeeTimeSensitiveNotificationsEnabled bool true' "${CONTENTS_DIR}/Info.plist"
+    ENTITLEMENT_FLAGS=(--entitlements "$SIGNING_ENTITLEMENTS")
+fi
 printf 'Signing Edgee.app (%s)…\n' "$SIGNING_IDENTITY"
 if [[ "$SIGNING_IDENTITY" == "-" ]]; then
     codesign --force --sign - --options runtime --timestamp=none "$APP_DIR"
 else
-    codesign --force --sign "$SIGNING_IDENTITY" --options runtime --timestamp "$APP_DIR"
+    codesign --force --sign "$SIGNING_IDENTITY" --options runtime --timestamp ${ENTITLEMENT_FLAGS[@]+"${ENTITLEMENT_FLAGS[@]}"} "$APP_DIR"
 fi
 codesign --verify --deep --strict "$APP_DIR"
 

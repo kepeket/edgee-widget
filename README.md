@@ -28,7 +28,7 @@ Demo mode is visibly labeled, never makes API calls, and never changes your real
 
 - **Usage:** rolling 24 hours, 7 days, or 30 days, or calendar day/week/month to date; total spend and requests; input, cache-write, cache-read, and output token volumes and costs; spend history; model mix by cost, tokens, or requests.
 - **Agents:** existing agent keys from your active CLI profile; tool compression, tool surface reduction, and output brevity; current route display and an on-demand model catalog preview. Model switching is marked “Soon available” and cannot submit route changes.
-- **Watchdog:** spend/token budgets, frontier cost share, thinking-to-executor cost ratio, and session spend acceleration. Alerts link to agent controls. Nothing reroutes automatically.
+- **Watchdog:** thinking-heavy token usage after noon, a $1,000 calendar-month spending threshold, and $50 actually spent in less than an hour. Native notifications open a model-routing preview. Thresholds and model families are editable in the Watchdog tab.
 - **Native behavior:** minute-by-minute refresh, optional macOS notifications, launch at login, a pin-to-open popover, and a menu bar cost that stays on the daily window while you browse week/month.
 
 Choose **Settings → Stats period**:
@@ -36,7 +36,7 @@ Choose **Settings → Stats period**:
 - **Rolling** (default): Day / Week / Month mean the last 24 hours / 7 days / 30 days.
 - **Calendar**: Today / This week / This month use the Console API’s to-date presets, with UTC boundaries and Monday-start weeks.
 
-The menu-bar cost and daily budget alerts follow the same mode. Switching modes refreshes immediately; the choice persists across launches. Calendar baselines reset at the next minute poll or wake after midnight.
+The menu-bar cost and Overview daily budget follow the same mode. Watchdog uses independent calendar-day and calendar-month data (UTC). Switching modes refreshes immediately; the choice persists across launches. Calendar baselines reset at the next minute poll or wake after midnight.
 
 ## Authentication
 
@@ -48,13 +48,19 @@ Switch accounts with `edgee auth switch`, then refresh. New agent keys are confi
 
 ## Watchdog behavior
 
-Default limits are $20 and 10 million tokens per selected daily window, with budget warnings beginning at 80%. All values are editable in the Watchdog tab. A budget of zero disables that budget.
+The Watchdog tab has three independently enabled rules:
 
-In **Watchdog → Model Roles**, the app suggests Thinking for Opus, GPT Sol, Kimi K3, GLM 5.3, and Deepseek v4.1; Executor for Sonnet, GPT Terra/Luna, the Qwen family, and Kimi 2.5. Suggestions recognize provider prefixes, versions, and common punctuation. These are workflow preferences, not capability ratings. **Apply suggested roles** accepts suggestions for models seen in the selected daily window without overwriting manual roles. You can also choose a role individually or return it to Automatic.
+- **Thinking-heavy day:** after noon in the Mac's local timezone, warn when more than 50% of today's tokens belong to thinking families. Today's usage uses the Console's UTC day. All tokens, including unknown model families, remain in the denominator. Naming-based family suggestions can be overridden.
+- **Monthly spending:** warn at $1,000 of member-scoped calendar-month spend (UTC).
+- **Fast spending:** warn when cumulative spending increases by at least $50 in an observed interval shorter than one hour. This measures actual spending across multiple checks, not an extrapolated hourly rate. It needs two observations; history resets at a month boundary, account/scope change, or cost reset. Activity outside the observed interval cannot be reconstructed from hourly API buckets.
 
-Automatic classifications are estimates; thinking-to-executor advice requires accepted suggestions or manual assignments. Each model has one role, so assigning Thinking excludes it from Frontier share checks. All models still count toward budget limits. Session spike detection needs two fresh observations for the same session, ignores cost resets, and requires a meaningful increase before alerting.
+All amounts are USD, matching Edgee's API. The thresholds are editable and advisory; they do not enforce spending caps. Overview budgets and menu-bar behavior are unchanged. Saved manual family assignments are migrated to the new Watchdog preferences.
 
-Notifications are opt-in and limited to once per alert level per hour while the process runs. The app must remain running to monitor. These are advisory thresholds, not server-enforced spending caps.
+Notifications are opt-in through the macOS permission prompt. The tab shows system permission status, links to Notifications and Focus settings, and offers a test notification. Notifications include **Review model routing**, which opens the existing read-only model preview inside Watchdog. Model switching remains unavailable.
+
+Daily/monthly warnings notify once per account and calendar window; fast-spending warnings notify at most once per hour. Successful notification history and recent spending observations persist across app restarts. Failed delivery is visible and retried on the next check. Checks run every minute while the app is running; data older than five minutes or from expired windows cannot generate alerts. Demo mode never requests usage or sends notifications.
+
+**Focus / DND:** Time Sensitive delivery is opt-in and requires a signed, provisioned build with Apple's Time Sensitive Notifications capability. Users must also allow Time Sensitive notifications for Edgee and in their Focus settings. Ordinary local builds can be allowed through DND by adding Edgee to Focus's allowed apps. The app never overrides Focus settings or uses Critical Alerts. See [notification signing setup](docs/DEPLOYMENT.md#watchdog-notifications-and-focus).
 
 ## Develop and test
 

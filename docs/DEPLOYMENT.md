@@ -50,9 +50,9 @@ This builds the app with hardened runtime and a secure signing timestamp, submit
 
 ```sh
 codesign --verify --deep --strict build/universal/Edgee.app
-./scripts/verify-package.sh dist/Edgee-Pulse-0.1.9-universal.pkg
-pkgutil --check-signature dist/Edgee-Pulse-0.1.9-universal.pkg
-spctl --assess --type install --verbose=2 dist/Edgee-Pulse-0.1.9-universal.pkg
+./scripts/verify-package.sh dist/Edgee-Pulse-0.1.10-universal.pkg
+pkgutil --check-signature dist/Edgee-Pulse-0.1.10-universal.pkg
+spctl --assess --type install --verbose=2 dist/Edgee-Pulse-0.1.10-universal.pkg
 (cd dist && shasum -a 256 -c SHA256SUMS)
 ```
 
@@ -88,3 +88,20 @@ For removal, quit the app, turn off its **Launch at login** setting, and remove 
 ## Source and license
 
 The app bundles this repository's `LICENSE` in `Contents/Resources`. Keep the matching source revision and build instructions accessible alongside your internal distribution: <https://github.com/kepeket/edgee-widget>. No company credentials, usage data, signing keys, or development caches are included in the package payload.
+
+## Watchdog notifications and Focus
+
+Standard local builds use normal native notifications. Users can allow Edgee through DND by adding it in **System Settings → Focus → Do Not Disturb → Allowed Apps**. Notification permission is requested only after the user enables notifications in Watchdog.
+
+To distribute a build supporting Time Sensitive notifications:
+
+1. Enable **Time Sensitive Notifications** for the app's explicit identifier in your Apple developer account and generate a matching macOS provisioning profile for the signing/distribution method.
+2. Set `EDGEE_BUNDLE_ID` and `SIGN_IDENTITY` as usual. Set `EDGEE_TIME_SENSITIVE_PROFILE` to the profile's local path before running `scripts/build-app.sh` (or packaging, which invokes it).
+3. The build checks the profile's capability and app identifier, embeds it, applies `Resources/Watchdog.entitlements`, and marks support in the app's Info.plist. The profile and signing credentials must remain outside Git. Ad-hoc builds reject this option instead of producing an app with restricted entitlements that may not launch.
+4. In Watchdog, enable notifications, then **Allow alerts during Focus / DND**. Allow Time Sensitive notifications for Edgee in macOS Notifications settings and in the desired Focus. macOS retains final control of delivery; there is no unconditional DND bypass.
+
+The implementation uses `UNNotificationInterruptionLevel.timeSensitive`; it does not request the separately approved Critical Alerts entitlement. Verify the distributed signed build's launch and delivery on a Mac with DND enabled. Normal unit tests can check notification content and policy but cannot prove system presentation through Focus.
+
+Manual acceptance checks: grant/deny notification permission; send a test; toggle DND with Edgee allowed/disallowed; click **Review model routing**; restart without repeated day/month alerts; wake from sleep; cross UTC day/month boundaries; disconnect the network and switch Edgee accounts. Routing previews must never mutate agent settings.
+
+Apple references: [Time Sensitive notifications](https://developer.apple.com/videos/play/wwdc2021/10091/) and [Focus settings](https://support.apple.com/guide/mac-help/change-focus-settings-mchlff5da36d/mac).
