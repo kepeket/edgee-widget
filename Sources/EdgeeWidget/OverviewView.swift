@@ -5,14 +5,15 @@ enum MixMetric: String, CaseIterable { case cost = "Cost", tokens = "Tokens", re
 
 struct OverviewView: View {
     @EnvironmentObject var store: AppStore
-    @State private var metric: MixMetric = .cost
+    @State private var metric: MixMetric
+    init(metric: MixMetric = .cost) { _metric = State(initialValue: metric) }
     var body: some View {
         VStack(spacing: 12) {
             periodPicker
             if let usage = store.usage {
                 spendCard(usage)
                 tokensCard(usage)
-                mixCard(usage)
+                mixCard(usage, store: store)
                 if let notice = usage.notice { Label(notice, systemImage: "info.circle").font(.system(size: 10)).foregroundStyle(Theme.muted).frame(maxWidth: .infinity, alignment: .leading) }
             } else if store.isRefreshing {
                 VStack(spacing: 16) { ProgressView().controlSize(.small); Text("Reading your Edgee activity…").font(.system(size: 12)).foregroundStyle(Theme.muted) }.frame(maxWidth: .infinity, minHeight: 260)
@@ -115,7 +116,7 @@ struct OverviewView: View {
             }
         }
     }
-    private func mixCard(_ usage: UsageSnapshot) -> some View {
+    func mixCard(_ usage: UsageSnapshot, store: AppStore) -> some View {
         Card {
             VStack(spacing: 13) {
                 HStack {
@@ -126,17 +127,18 @@ struct OverviewView: View {
                     } }
                 }
                 if usage.models.isEmpty { Text("No model activity in this period.").font(.system(size: 11)).foregroundStyle(Theme.muted) }
-                ForEach(Array(sortedModels(usage).enumerated()), id: \.element.id) { index, model in
+                ForEach(sortedModels(usage)) { model in
+                    let color = store.modelColor(for: model.id)
                     VStack(spacing: 7) {
                         HStack(spacing: 7) {
-                            RoundedRectangle(cornerRadius: 2).fill(Theme.modelColors[index % Theme.modelColors.count]).frame(width: 6, height: 6)
+                            RoundedRectangle(cornerRadius: 2).fill(color).frame(width: 6, height: 6)
                             Text(model.name).font(.system(size: 11, weight: .medium)).lineLimit(1).help(model.id)
                             Spacer(minLength: 4)
                             Text(modelValue(model)).font(.system(size: 11, weight: .medium, design: .monospaced))
                             Text(Display.percent(amount(model) / max(1e-9, mixTotal(usage)))).font(.system(size: 9, design: .monospaced)).foregroundStyle(Theme.muted).frame(width: 32, alignment: .trailing)
                         }
                         GeometryReader { g in
-                            ZStack(alignment: .leading) { Capsule().fill(Theme.elevated); Capsule().fill(Theme.modelColors[index % Theme.modelColors.count].opacity(0.75)).frame(width: g.size.width * min(1, max(0,amount(model) / max(1e-9,mixTotal(usage))))) }
+                            ZStack(alignment: .leading) { Capsule().fill(Theme.elevated); Capsule().fill(color.opacity(0.75)).frame(width: g.size.width * min(1, max(0,amount(model) / max(1e-9,mixTotal(usage))))) }
                         }.frame(height: 3)
                     }
                 }

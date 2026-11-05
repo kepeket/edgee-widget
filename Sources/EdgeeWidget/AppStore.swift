@@ -6,7 +6,17 @@ import EdgeeCore
 @MainActor final class AppStore: ObservableObject {
     @Published var period: UsagePeriod = .day
     @Published private(set) var windowMode: UsageWindowMode
-    @Published var usage: UsageSnapshot?
+    @Published var usage: UsageSnapshot? {
+        didSet {
+            guard let usage else { return }
+            let models = usage.models.sorted {
+                $0.cost == $1.cost ? $0.id < $1.id : $0.cost > $1.cost
+            }
+            for model in models where modelColorIndices[model.id] == nil {
+                modelColorIndices[model.id] = modelColorIndices.count % Theme.modelColors.count
+            }
+        }
+    }
     @Published var dailyUsage: UsageSnapshot?
     @Published var identity: EdgeeIdentity?
     @Published var agents: [AgentConfiguration] = []
@@ -33,6 +43,8 @@ import EdgeeCore
     private let defaults: UserDefaults
     private let service: any EdgeeServing
     private let now: () -> Date
+    // Retain assignments for the store's lifetime, including temporarily absent models.
+    private var modelColorIndices: [String: Int] = [:]
     private var pollTask: Task<Void, Never>?
     private var refreshTask: Task<Void, Never>?
     private var generation = 0
@@ -51,6 +63,9 @@ import EdgeeCore
         else { watchdogSettings = WatchdogSettings() }
         watchdog.onAlertsChange = { [weak self] alerts in self?.alerts = alerts }
         if demo { enterDemo() }
+    }
+    func modelColor(for id: String) -> Color {
+        Theme.modelColors[modelColorIndices[id] ?? 0]
     }
     var statusTitle: String {
         guard let dailyUsage else { return "—" }

@@ -8,7 +8,7 @@ Built with SwiftUI, AppKit, and Swift Charts. No Electron, web view, package dep
 
 ## Run
 
-Requires **macOS 14+**, **Xcode 16+ / Swift 6+**, and the [Edgee CLI](https://www.edgee.ai/docs/features/cli).
+Requires **macOS 14+**, **full Xcode 16+ / Swift 6+**, and the [Edgee CLI](https://www.edgee.ai/docs/features/cli). Open Xcode once to finish setup before building.
 
 ```sh
 make run
